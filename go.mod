@@ -3,7 +3,7 @@ module github.com/bool64/cache
 go 1.15
 
 require (
-	github.com/bool64/ctxd v0.1.2
+	github.com/bool64/ctxd v0.1.3
 	github.com/bool64/dev v0.1.10
 	github.com/bool64/stats v0.1.1
 	github.com/patrickmn/go-cache v2.1.1-0.20191004192108-46f407853014+incompatible

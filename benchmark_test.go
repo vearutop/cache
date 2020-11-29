@@ -210,7 +210,6 @@ func Benchmark_Patrickmn(b *testing.B) {
 		if i < 10000 {
 			c.Set(k, 123, time.Minute)
 		}
-		// nolint
 		_, _ = c.Get(k)
 	}
 }
