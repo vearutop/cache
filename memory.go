@@ -153,21 +153,10 @@ func NewMemory(cfg ...MemoryConfig) *Memory {
 	return m
 }
 
-// Read gets value.
-func (c *memory) Read(ctx context.Context, k string) (interface{}, error) {
-	if SkipRead(ctx) {
-		return nil, ErrCacheItemNotFound
-	}
-
-	c.RLock()
-	cacheEntry, ok := c.data[k]
-	c.RUnlock()
-
-	if !ok {
+func (c *memory) prepareRead(ctx context.Context, cacheEntry entry, found bool) (interface{}, error) {
+	if !found {
 		if c.log != nil {
-			c.log.Debug(ctx, "cache miss",
-				"name", c.config.Name,
-				"key", k)
+			c.log.Debug(ctx, "cache miss", "name", c.config.Name)
 		}
 
 		if c.stat != nil {
@@ -179,9 +168,7 @@ func (c *memory) Read(ctx context.Context, k string) (interface{}, error) {
 
 	if cacheEntry.Exp.Before(time.Now()) {
 		if c.log != nil {
-			c.config.Logger.Debug(ctx, "cache key expired",
-				"name", c.config.Name,
-				"key", k)
+			c.config.Logger.Debug(ctx, "cache key expired", "name", c.config.Name)
 		}
 
 		if c.stat != nil {
@@ -198,11 +185,24 @@ func (c *memory) Read(ctx context.Context, k string) (interface{}, error) {
 	if c.log != nil {
 		c.log.Debug(ctx, "cache hit",
 			"name", c.config.Name,
-			"key", k,
-			"entry", cacheEntry)
+			"entry", cacheEntry,
+		)
 	}
 
 	return cacheEntry.Val, nil
+}
+
+// Read gets value.
+func (c *memory) Read(ctx context.Context, k string) (interface{}, error) {
+	if SkipRead(ctx) {
+		return nil, ErrCacheItemNotFound
+	}
+
+	c.RLock()
+	cacheEntry, found := c.data[k]
+	c.RUnlock()
+
+	return c.prepareRead(ctx, cacheEntry, found)
 }
 
 // Write sets value.
