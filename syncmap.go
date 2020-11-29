@@ -7,63 +7,26 @@ import (
 	"sort"
 	"sync"
 	"time"
-
-	"github.com/bool64/ctxd"
-	"github.com/bool64/stats"
 )
 
 var _ ReadWriter = &SyncMap{}
 
-// memory is an in-memory cache.
+// SyncMap is an in-memory cache.
 type SyncMap struct {
-	data   sync.Map
-	closed chan struct{}
+	data sync.Map
 
-	config MemoryConfig
-	log    ctxd.Logger
-	stat   stats.Tracker
+	*trait
 }
 
 // NewSyncMap creates an instance of in-memory cache with optional configuration.
 func NewSyncMap(cfg ...MemoryConfig) *SyncMap {
-	config := MemoryConfig{}
+	c := &SyncMap{}
 
-	if len(cfg) >= 1 {
-		config = cfg[0]
-	}
+	c.trait = newTrait(c, cfg...)
 
-	if config.DeleteExpiredAfter == 0 {
-		config.DeleteExpiredAfter = 24 * time.Hour
-	}
-
-	if config.DeleteExpiredJobInterval == 0 {
-		config.DeleteExpiredJobInterval = time.Hour
-	}
-
-	if config.ItemsCountReportInterval == 0 {
-		config.ItemsCountReportInterval = time.Minute
-	}
-
-	if config.ExpirationJitter == 0 {
-		config.ExpirationJitter = 0.1
-	}
-
-	if config.TimeToLive == 0 {
-		config.TimeToLive = 5 * time.Minute
-	}
-
-	c := &SyncMap{
-		config: config,
-		stat:   config.Stats,
-		log:    config.Logger,
-		closed: make(chan struct{}, 1),
-	}
-
-	if c.stat != nil {
-		go c.reportItemsCount()
-	}
-
-	go c.cleaner()
+	runtime.SetFinalizer(c, func(m *SyncMap) {
+		close(c.closed)
+	})
 
 	return c
 }
@@ -165,26 +128,6 @@ func (c *SyncMap) RemoveAll() {
 	})
 }
 
-// Close disables cache instance.
-func (c *SyncMap) Close() {
-	c.closed <- struct{}{}
-}
-
-func (c *SyncMap) cleaner() {
-	for {
-		interval := c.config.DeleteExpiredJobInterval
-
-		select {
-		case <-time.After(interval):
-			c.clearExpired()
-		case <-c.closed:
-			c.RemoveAll()
-
-			return
-		}
-	}
-}
-
 func (c *SyncMap) clearExpired() {
 	expirationBoundary := time.Now().Add(-c.config.DeleteExpiredAfter)
 
@@ -206,29 +149,6 @@ func (c *SyncMap) clearExpired() {
 	})
 
 	c.evictHeapInUse()
-}
-
-func (c *SyncMap) reportItemsCount() {
-	for {
-		interval := c.config.ItemsCountReportInterval
-		select {
-		case <-c.closed:
-			return
-		case <-time.After(interval):
-			count := c.Len()
-
-			if c.log != nil {
-				c.log.Debug(context.Background(), "cache items count",
-					"name", c.config.Name,
-					"count", count,
-				)
-			}
-
-			if c.stat != nil {
-				c.stat.Set(context.Background(), MetricItems, float64(count), "name", c.config.Name)
-			}
-		}
-	}
 }
 
 // Len returns number of elements in cache.

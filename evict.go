@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func (c *memory) evictHeapInUse() {
+func (c *Memory) evictHeapInUse() {
 	if c.config.HeapInUseSoftLimit == 0 {
 		return
 	}
