@@ -36,9 +36,6 @@ func ExampleNewMemory() {
 	val, _ := c.Read(ctx, "my-key")
 	fmt.Printf("%v", val)
 
-	// Optionally close cache to stop cleaner goroutine and disable writes.
-	c.Close()
-
 	// Output:
 	// [1 2 3]
 }

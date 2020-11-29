@@ -58,28 +58,19 @@ func TestMemory(t *testing.T) {
 	mc.ExpireAll()
 
 	// Forced expiration.
-	time.Sleep(time.Millisecond)
+	time.Sleep(5 * time.Millisecond)
 
 	val, err = mc.Read(ctx, "key")
 	assert.Equal(t, 123, val)
 	assert.EqualError(t, err, cache.ErrExpiredCacheItem.Error())
 
-	mc.Close()
-	time.Sleep(time.Millisecond)
+	time.Sleep(5 * time.Millisecond)
 
 	assert.Equal(
 		t,
-		map[string]float64{"cache_expired": 2, "cache_hit": 1, "cache_items": 0, "cache_miss": 2, "cache_write": 2},
+		map[string]float64{"cache_expired": 2, "cache_hit": 1, "cache_items": 1, "cache_miss": 2, "cache_write": 2},
 		st.Values(),
 	)
-
-	// Closed.
-	val, err = mc.Read(ctx, "key")
-	assert.Nil(t, val)
-	assert.EqualError(t, err, "cache is closed")
-
-	err = mc.Write(ctx, "key", 123)
-	assert.EqualError(t, err, "cache is closed")
 }
 
 func TestMemory_Read_concurrency(t *testing.T) {

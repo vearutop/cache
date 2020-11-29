@@ -355,6 +355,7 @@ func TestFailover_Get_SyncUpdate(t *testing.T) {
 			UpstreamConfig: cache.MemoryConfig{
 				TimeToLive: time.Millisecond,
 			},
+			SyncRead: true,
 		},
 	)
 
@@ -365,15 +366,15 @@ func TestFailover_Get_SyncUpdate(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "first value", val)
 	assert.Equal(t, int64(1), atomic.LoadInt64(&cnt))
-	time.Sleep(time.Millisecond)
+	time.Sleep(5 * time.Millisecond)
 
 	val, err = c.Get(cache.WithTTL(ctx, time.Minute), "key", func(ctx context.Context) (i interface{}, e error) {
 		atomic.AddInt64(&cnt, 1)
 		return "second value", nil
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "second value", val) // Updated value returned.
 	assert.Equal(t, int64(2), atomic.LoadInt64(&cnt))
+	assert.Equal(t, "second value", val) // Updated value returned.
 
 	time.Sleep(10 * time.Millisecond)
 

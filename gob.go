@@ -9,7 +9,7 @@ import (
 )
 
 // Dump saves cached entries and returns a number of processed entries.
-func (c *Memory) Dump(w io.Writer) (int, error) {
+func (c *memory) Dump(w io.Writer) (int, error) {
 	encoder := gob.NewEncoder(w)
 
 	// TODO check if Entry escapes and if value semantics helps.
@@ -25,7 +25,7 @@ func (c *Memory) Dump(w io.Writer) (int, error) {
 }
 
 // Restore loads cached entries and returns number of processed entries.
-func (c *Memory) Restore(r io.Reader) (int, error) {
+func (c *memory) Restore(r io.Reader) (int, error) {
 	decoder := gob.NewDecoder(r)
 	e := struct {
 		Key   string

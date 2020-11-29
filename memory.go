@@ -2,17 +2,14 @@ package cache
 
 import (
 	"context"
-	"errors"
 	"math/rand"
+	"runtime"
 	"sync"
 	"time"
 
 	"github.com/bool64/ctxd"
 	"github.com/bool64/stats"
 )
-
-// errMemoryCacheIsClosed indicates cache was closed and deactivated.
-var errMemoryCacheIsClosed = errors.New("cache is closed")
 
 // entry is a cache entry.
 type entry struct {
@@ -86,10 +83,14 @@ type MemoryConfig struct {
 	HeapInUseEvictFraction float64
 }
 
-var _ ReadWriter = &Memory{}
+var _ ReadWriter = &memory{}
 
-// Memory is an in-memory cache.
 type Memory struct {
+	*memory
+}
+
+// memory is an in-memory cache.
+type memory struct {
 	sync.RWMutex
 	data   map[string]entry
 	closed chan struct{}
@@ -127,12 +128,12 @@ func NewMemory(cfg ...MemoryConfig) *Memory {
 		config.TimeToLive = 5 * time.Minute
 	}
 
-	c := &Memory{
+	c := &memory{
 		data:   map[string]entry{},
 		config: config,
 		stat:   config.Stats,
 		log:    config.Logger,
-		closed: make(chan struct{}, 1),
+		closed: make(chan struct{}),
 	}
 
 	if c.stat != nil {
@@ -141,27 +142,26 @@ func NewMemory(cfg ...MemoryConfig) *Memory {
 
 	go c.cleaner()
 
-	return c
+	m := &Memory{
+		memory: c,
+	}
+
+	runtime.SetFinalizer(m, func(m *Memory) {
+		close(c.closed)
+	})
+
+	return m
 }
 
 // Read gets value.
-func (c *Memory) Read(ctx context.Context, k string) (interface{}, error) {
+func (c *memory) Read(ctx context.Context, k string) (interface{}, error) {
 	if SkipRead(ctx) {
 		return nil, ErrCacheItemNotFound
 	}
 
-	closed := false
 	c.RLock()
-	if c.data == nil {
-		closed = true
-	}
-
 	cacheEntry, ok := c.data[k]
 	c.RUnlock()
-
-	if closed {
-		return nil, errMemoryCacheIsClosed // TODO: remove closer with GC.
-	}
 
 	if !ok {
 		if c.log != nil {
@@ -206,17 +206,9 @@ func (c *Memory) Read(ctx context.Context, k string) (interface{}, error) {
 }
 
 // Write sets value.
-func (c *Memory) Write(ctx context.Context, k string, v interface{}) error {
+func (c *memory) Write(ctx context.Context, k string, v interface{}) error {
 	c.Lock()
 	defer c.Unlock()
-
-	if c.data == nil {
-		if c.log != nil {
-			c.log.Debug(ctx, "writing to a closed cache", "name", c.config.Name, "key", k)
-		}
-
-		return errMemoryCacheIsClosed
-	}
 
 	//ttl := c.config.TimeToLive
 	ttl := TTL(ctx)
@@ -242,7 +234,7 @@ func (c *Memory) Write(ctx context.Context, k string, v interface{}) error {
 }
 
 // ExpireAll marks all entries as expired, they can still serve stale cache.
-func (c *Memory) ExpireAll() {
+func (c *memory) ExpireAll() {
 	now := time.Now()
 
 	c.Lock()
@@ -254,37 +246,30 @@ func (c *Memory) ExpireAll() {
 }
 
 // RemoveAll deletes all entries.
-func (c *Memory) RemoveAll() {
+func (c *memory) RemoveAll() {
 	c.Lock()
 	c.data = make(map[string]entry)
 	c.Unlock()
 }
 
-// Close disables cache instance.
-func (c *Memory) Close() {
-	c.closed <- struct{}{}
-}
-
-func (c *Memory) cleaner() {
+func (c *memory) cleaner() {
 	for {
-		c.RLock()
 		interval := c.config.DeleteExpiredJobInterval
-		c.RUnlock()
 
 		select {
 		case <-time.After(interval):
 			c.clearExpired()
 		case <-c.closed:
-			c.Lock()
-			c.data = nil
-			c.Unlock()
-
+			if c.log != nil {
+				c.log.Debug(context.Background(), "exiting expired cache cleaner",
+					"name", c.config.Name)
+			}
 			return
 		}
 	}
 }
 
-func (c *Memory) clearExpired() {
+func (c *memory) clearExpired() {
 	expirationBoundary := time.Now().Add(-c.config.DeleteExpiredAfter)
 	keys := make([]string, 0, 100)
 
@@ -312,37 +297,39 @@ func (c *Memory) clearExpired() {
 	c.evictHeapInUse()
 }
 
-func (c *Memory) reportItemsCount() {
+func (c *memory) reportItemsCount() {
 	for {
-		c.RLock()
 		interval := c.config.ItemsCountReportInterval
-		c.RUnlock()
 
-		<-time.After(interval)
-		c.RLock()
-		closed := c.data == nil
-		count := len(c.data)
-		c.RUnlock()
+		select {
+		case <-time.After(interval):
+			count := c.Len()
 
-		if closed {
+			if c.log != nil {
+				c.log.Debug(context.Background(), "cache items count",
+					"name", c.config.Name,
+					"count", c.Len(),
+				)
+			}
+
+			if c.stat != nil {
+				c.stat.Set(context.Background(), MetricItems, float64(count), "name", c.config.Name)
+			}
+		case <-c.closed:
+			if c.log != nil {
+				c.log.Debug(context.Background(), "exiting cache items counter goroutine",
+					"name", c.config.Name)
+			}
+			if c.stat != nil {
+				c.stat.Set(context.Background(), MetricItems, float64(c.Len()), "name", c.config.Name)
+			}
 			return
-		}
-
-		if c.log != nil {
-			c.log.Debug(context.Background(), "cache items count",
-				"name", c.config.Name,
-				"count", count,
-			)
-		}
-
-		if c.stat != nil {
-			c.stat.Set(context.Background(), MetricItems, float64(count), "name", c.config.Name)
 		}
 	}
 }
 
 // Len returns number of elements in cache.
-func (c *Memory) Len() int {
+func (c *memory) Len() int {
 	c.RLock()
 	cnt := len(c.data)
 	c.RUnlock()
@@ -351,7 +338,7 @@ func (c *Memory) Len() int {
 }
 
 // Walk walks cached entries.
-func (c *Memory) Walk(walkFn func(key string, value Entry) error) (int, error) {
+func (c *memory) Walk(walkFn func(key string, value Entry) error) (int, error) {
 	c.RLock()
 	defer c.RUnlock()
 

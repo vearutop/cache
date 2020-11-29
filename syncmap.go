@@ -14,7 +14,7 @@ import (
 
 var _ ReadWriter = &SyncMap{}
 
-// Memory is an in-memory cache.
+// memory is an in-memory cache.
 type SyncMap struct {
 	data   sync.Map
 	closed chan struct{}

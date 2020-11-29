@@ -349,7 +349,7 @@ func (sc *Failover) doBuild(
 	}
 
 	if sc.config.ObserveMutability && value != nil {
-		go sc.observeMutability(ctx, uVal, value)
+		sc.observeMutability(ctx, uVal, value)
 	}
 
 	return uVal, err
