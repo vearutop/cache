@@ -17,7 +17,7 @@ type trait struct {
 
 type backend interface {
 	Len() int
-	clearExpired()
+	clearExpiredBefore(t time.Time)
 }
 
 func newTrait(b backend, cfg ...MemoryConfig) *trait {
@@ -139,7 +139,8 @@ func (c *trait) cleaner(b backend) {
 
 		select {
 		case <-time.After(interval):
-			b.clearExpired()
+			expirationBoundary := time.Now().Add(-c.config.DeleteExpiredAfter)
+			b.clearExpiredBefore(expirationBoundary)
 		case <-c.closed:
 			if c.log != nil {
 				c.log.Debug(context.Background(), "exiting expired cache cleaner",

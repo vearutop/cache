@@ -90,9 +90,7 @@ func (c *SyncMap) RemoveAll() {
 	})
 }
 
-func (c *SyncMap) clearExpired() {
-	expirationBoundary := time.Now().Add(-c.config.DeleteExpiredAfter)
-
+func (c *SyncMap) clearExpiredBefore(expirationBoundary time.Time) {
 	c.data.Range(func(key, value interface{}) bool {
 		v := value.(entry)
 

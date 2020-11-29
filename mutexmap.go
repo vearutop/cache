@@ -93,8 +93,7 @@ func (c *Memory) RemoveAll() {
 	c.Unlock()
 }
 
-func (c *Memory) clearExpired() {
-	expirationBoundary := time.Now().Add(-c.config.DeleteExpiredAfter)
+func (c *Memory) clearExpiredBefore(expirationBoundary time.Time) {
 	keys := make([]string, 0, 100)
 
 	c.RLock()
