@@ -53,7 +53,7 @@ func TestMemory(t *testing.T) {
 	assert.Nil(t, val)
 	assert.EqualError(t, err, cache.ErrCacheItemNotFound.Error())
 
-	err = mc.Write(cache.WithTTL(ctx, 100*time.Millisecond), "key", 123)
+	err = mc.Write(cache.WithTTL(ctx, 100*time.Millisecond, false), "key", 123)
 	assert.NoError(t, err)
 	mc.ExpireAll()
 

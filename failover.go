@@ -306,7 +306,7 @@ func (sc *Failover) refreshStale(ctx context.Context, key string, value interfac
 		"value", value)
 	sc.stat.Add(ctx, MetricRefreshed, 1, "name", sc.config.Name)
 
-	writeErr := sc.upstream.Write(WithTTL(ctx, sc.config.UpdateTTL), key, value)
+	writeErr := sc.upstream.Write(WithTTL(ctx, sc.config.UpdateTTL, false), key, value)
 	if writeErr != nil {
 		return ctxd.WrapError(ctx, writeErr, "failed to refresh expired value")
 	}

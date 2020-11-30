@@ -3,19 +3,23 @@ package cache
 import (
 	"context"
 	"errors"
+	"github.com/swaggest/usecase/status"
 	"io"
 	"time"
 )
 
 var (
 	// ErrExpiredCacheItem indicates expired cache entry.
-	ErrExpiredCacheItem = errors.New("expired item")
+	ErrExpiredCacheItem = errors.New("expired cache item")
 	// ErrCacheItemNotFound indicates missing cache entry.
-	ErrCacheItemNotFound = errors.New("cache item not found")
+	ErrCacheItemNotFound = status.Wrap(errors.New("missing cache item"), status.NotFound)
 )
 
-// DefaultTTL indicates default value for entry expiration time.
+// DefaultTTL indicates default (unlimited ttl) value for entry expiration time.
 const DefaultTTL = time.Duration(0)
+
+// SkipWriteTTL is a ttl value to indicate that cache must not be stored.
+const SkipWriteTTL = time.Duration(-1)
 
 // Reader reads from cache.
 type Reader interface {
