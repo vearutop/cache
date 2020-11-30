@@ -13,6 +13,7 @@ github.com/bool64/dev v0.1.10 h1:4L6eLD+qo1QgWDy+Y7OhJxi/gLwOAuV1rd07noMc3dU=
 github.com/bool64/dev v0.1.10/go.mod h1:pn52JC52uSgpazChx9CeXyG+S3sW2V36HHoLNBbscdg=
 github.com/bool64/stats v0.1.1 h1:N2gRypYMMouNX8QUR3U/tjBiFTULg4sWCf7CspCyZ64=
 github.com/bool64/stats v0.1.1/go.mod h1:YsArxbONDO3nFTUe84yqW04rqOqLgd4f+3Pfalydc90=
+github.com/cespare/xxhash/v2 v2.1.1 h1:6MnRN8NT7+YBpUIWxHtefFZOKTAPgGjpQSxqLNn0+qY=
 github.com/cespare/xxhash/v2 v2.1.1/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

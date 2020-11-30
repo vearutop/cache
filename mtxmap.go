@@ -8,25 +8,25 @@ import (
 	"time"
 )
 
-var _ ReadWriter = &Memory{}
+var _ ReadWriter = &MutexMap{}
 
 // Memory is an in-memory cache.
-type Memory struct {
-	sync.RWMutex
+type MutexMap struct {
+	sync.Mutex
 	data map[string]entry
 
 	*trait
 }
 
 // NewMemory creates an instance of in-memory cache with optional configuration.
-func NewMemory(cfg ...MemoryConfig) *Memory {
-	c := &Memory{
+func NewMutexMap(cfg ...MemoryConfig) *MutexMap {
+	c := &MutexMap{
 		data: map[string]entry{},
 	}
 
 	c.trait = newTrait(c, cfg...)
 
-	runtime.SetFinalizer(c, func(m *Memory) {
+	runtime.SetFinalizer(c, func(m *MutexMap) {
 		close(c.closed)
 	})
 
@@ -34,20 +34,20 @@ func NewMemory(cfg ...MemoryConfig) *Memory {
 }
 
 // Read gets value.
-func (c *Memory) Read(ctx context.Context, k string) (interface{}, error) {
+func (c *MutexMap) Read(ctx context.Context, mtxkey string) (interface{}, error) {
 	if SkipRead(ctx) {
 		return nil, ErrCacheItemNotFound
 	}
 
-	c.RLock()
-	cacheEntry, found := c.data[k]
-	c.RUnlock()
+	c.Lock()
+	cacheEntry, found := c.data[mtxkey]
+	c.Unlock()
 
 	return c.prepareRead(ctx, cacheEntry, found)
 }
 
 // Write sets value.
-func (c *Memory) Write(ctx context.Context, k string, v interface{}) error {
+func (c *MutexMap) Write(ctx context.Context, k string, v interface{}) error {
 	c.Lock()
 	defer c.Unlock()
 
@@ -75,7 +75,7 @@ func (c *Memory) Write(ctx context.Context, k string, v interface{}) error {
 }
 
 // ExpireAll marks all entries as expired, they can still serve stale cache.
-func (c *Memory) ExpireAll() {
+func (c *MutexMap) ExpireAll() {
 	now := time.Now()
 
 	c.Lock()
@@ -87,22 +87,22 @@ func (c *Memory) ExpireAll() {
 }
 
 // RemoveAll deletes all entries.
-func (c *Memory) RemoveAll() {
+func (c *MutexMap) RemoveAll() {
 	c.Lock()
 	c.data = make(map[string]entry)
 	c.Unlock()
 }
 
-func (c *Memory) clearExpiredBefore(expirationBoundary time.Time) {
+func (c *MutexMap) clearExpiredBefore(expirationBoundary time.Time) {
 	keys := make([]string, 0, 100)
 
-	c.RLock()
+	c.Lock()
 	for k, i := range c.data {
 		if i.Exp.Before(expirationBoundary) {
 			keys = append(keys, k)
 		}
 	}
-	c.RUnlock()
+	c.Unlock()
 
 	if c.log != nil {
 		c.log.Debug(context.Background(), "clearing expired cache items",
@@ -117,31 +117,30 @@ func (c *Memory) clearExpiredBefore(expirationBoundary time.Time) {
 	}
 	c.Unlock()
 
-	c.evictHeapInUse()
 }
 
 // Len returns number of elements in cache.
-func (c *Memory) Len() int {
-	c.RLock()
+func (c *MutexMap) Len() int {
+	c.Lock()
 	cnt := len(c.data)
-	c.RUnlock()
+	c.Unlock()
 
 	return cnt
 }
 
 // Walk walks cached entries.
-func (c *Memory) Walk(walkFn func(key string, value Entry) error) (int, error) {
-	c.RLock()
-	defer c.RUnlock()
+func (c *MutexMap) Walk(walkFn func(key string, value Entry) error) (int, error) {
+	c.Lock()
+	defer c.Unlock()
 
 	n := 0
 
 	for k, v := range c.data {
-		c.RUnlock()
+		c.Unlock()
 
 		err := walkFn(k, v)
 
-		c.RLock()
+		c.Lock()
 
 		if err != nil {
 			return n, err

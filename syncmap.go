@@ -32,59 +32,20 @@ func NewSyncMap(cfg ...MemoryConfig) *SyncMap {
 }
 
 // Read gets value.
-func (c *SyncMap) Read(ctx context.Context, k string) (interface{}, error) {
+func (c *SyncMap) Read(ctx context.Context, key string) (interface{}, error) {
 	if SkipRead(ctx) {
 		return nil, ErrCacheItemNotFound
 	}
 
-	v, ok := c.data.Load(k)
+	v, found := c.data.Load(key)
 	cacheEntry := v.(entry)
-	if !ok {
-		if c.log != nil {
-			c.log.Debug(ctx, "cache miss",
-				"name", c.config.Name,
-				"key", k)
-		}
 
-		if c.stat != nil {
-			c.stat.Add(ctx, MetricMiss, 1, "name", c.config.Name)
-		}
-
-		return nil, ErrCacheItemNotFound
-	}
-
-	if cacheEntry.Exp.Before(time.Now()) {
-		if c.log != nil {
-			c.config.Logger.Debug(ctx, "cache key expired",
-				"name", c.config.Name,
-				"key", k)
-		}
-
-		if c.stat != nil {
-			c.stat.Add(ctx, MetricExpired, 1, "name", c.config.Name)
-		}
-
-		return cacheEntry.Val, errExpired{entry: cacheEntry}
-	}
-
-	if c.stat != nil {
-		c.stat.Add(ctx, MetricHit, 1, "name", c.config.Name)
-	}
-
-	if c.log != nil {
-		c.log.Debug(ctx, "cache hit",
-			"name", c.config.Name,
-			"key", k,
-			"entry", cacheEntry)
-	}
-
-	return cacheEntry.Val, nil
+	return c.prepareRead(ctx, cacheEntry, found)
 }
 
 // Write sets value.
-func (c *SyncMap) Write(ctx context.Context, k string, v interface{}) error {
-	ttl := c.config.TimeToLive
-	//ttl := TTL(ctx)
+func (c *SyncMap) Write(ctx context.Context, key string, value interface{}) error {
+	ttl := TTL(ctx)
 	if ttl == DefaultTTL {
 		ttl = c.config.TimeToLive
 	}
@@ -93,10 +54,10 @@ func (c *SyncMap) Write(ctx context.Context, k string, v interface{}) error {
 		ttl += time.Duration(float64(ttl) * c.config.ExpirationJitter * (rand.Float64() - 0.5))
 	}
 
-	c.data.Store(k, entry{Val: v, Exp: time.Now().Add(ttl)})
+	c.data.Store(key, entry{Val: value, Exp: time.Now().Add(ttl)})
 
 	if c.log != nil {
-		c.log.Debug(ctx, "wrote to cache", "name", c.config.Name, "key", k, "value", v, "ttl", ttl)
+		c.log.Debug(ctx, "wrote to cache", "name", c.config.Name, "key", key, "value", value, "ttl", ttl)
 	}
 
 	if c.stat != nil {
@@ -128,9 +89,7 @@ func (c *SyncMap) RemoveAll() {
 	})
 }
 
-func (c *SyncMap) clearExpired() {
-	expirationBoundary := time.Now().Add(-c.config.DeleteExpiredAfter)
-
+func (c *SyncMap) clearExpiredBefore(expirationBoundary time.Time) {
 	c.data.Range(func(key, value interface{}) bool {
 		v := value.(entry)
 
