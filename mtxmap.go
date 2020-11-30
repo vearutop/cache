@@ -34,13 +34,13 @@ func NewMutexMap(cfg ...MemoryConfig) *MutexMap {
 }
 
 // Read gets value.
-func (c *MutexMap) Read(ctx context.Context, k string) (interface{}, error) {
+func (c *MutexMap) Read(ctx context.Context, mtxkey string) (interface{}, error) {
 	if SkipRead(ctx) {
 		return nil, ErrCacheItemNotFound
 	}
 
 	c.Lock()
-	cacheEntry, found := c.data[k]
+	cacheEntry, found := c.data[mtxkey]
 	c.Unlock()
 
 	return c.prepareRead(ctx, cacheEntry, found)

@@ -43,14 +43,14 @@ func NewShardedMap(cfg ...MemoryConfig) *ShardedMap {
 }
 
 // Read gets value.
-func (c *ShardedMap) Read(ctx context.Context, k string) (interface{}, error) {
-	//if SkipRead(ctx) {
-	//	return nil, ErrCacheItemNotFound
-	//}
+func (c *ShardedMap) Read(ctx context.Context, sharkey string) (interface{}, error) {
+	if SkipRead(ctx) {
+		return nil, ErrCacheItemNotFound
+	}
 
-	b := &c.buckets[xxhash.Sum64String(k)%shards]
+	b := &c.buckets[xxhash.Sum64String(sharkey)%shards]
 	b.RLock()
-	cacheEntry, found := b.data[k]
+	cacheEntry, found := b.data[sharkey]
 	b.RUnlock()
 
 	return c.prepareRead(ctx, cacheEntry, found)

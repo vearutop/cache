@@ -40,6 +40,10 @@ func (c *SyncMap) Read(ctx context.Context, k string) (interface{}, error) {
 	v, found := c.data.Load(k)
 	cacheEntry := v.(entry)
 
+	if c.log != nil {
+		c.log.Debug(ctx, "checking cache", "key", k)
+	}
+
 	return c.prepareRead(ctx, cacheEntry, found)
 }
 
