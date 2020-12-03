@@ -35,6 +35,9 @@ jobs:
         run: |
           make test-unit
           OUTPUT=$(go tool cover -func=./unit.coverprofile)
+          OUTPUT="${OUTPUT//'%'/'%25'}​【7,6 m】"
+          OUTPUT="${OUTPUT//$'\n'/'%0A'}"
+          OUTPUT="${OUTPUT//$'\r'/'%0D'}"
           echo "::set-output name=result::$OUTPUT"
       - name: Comment
         if: matrix.go-version == '1.15.x'
@@ -44,7 +47,6 @@ jobs:
           header: test
           message: |
             ```
-            LALALAL
             ${{ steps.test.outputs.result }}
             ```
       - name: Upload code coverage
