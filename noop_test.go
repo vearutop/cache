@@ -13,11 +13,11 @@ func TestNoOp_Read(t *testing.T) {
 	assert.EqualError(t, err, "not found: missing cache item")
 }
 
-//func TestNoOp_Write(t *testing.T) {
-//	err := cache.NoOp{}.Write(context.Background(), "foo", 123)
-//	assert.NoError(t, err)
-//
-//	v, err := cache.NoOp{}.Read(context.Background(), "foo")
-//	assert.Nil(t, v)
-//	assert.EqualError(t, err, "not found: missing cache item")
-//}
+func TestNoOp_Write(t *testing.T) {
+	err := cache.NoOp{}.Write(context.Background(), "foo", 123)
+	assert.NoError(t, err)
+
+	v, err := cache.NoOp{}.Read(context.Background(), "foo")
+	assert.Nil(t, v)
+	assert.EqualError(t, err, "not found: missing cache item")
+}
