@@ -27,6 +27,13 @@ jobs:
         with:
           path: vendor
           key: ${{ runner.os }}-go-vendor-${{ hashFiles('**/go.mod') }}
+      - name: Restore base test coverage
+        uses: actions/cache@v2
+        with:
+          path: |
+            unit-base.txt
+          # Use base sha for PR or new commit hash for master/main push in test result key.
+          key: ${{ runner.os }}-test-unit-${{ (github.event.pull_request.base.sha != github.event.after) && github.event.pull_request.base.sha || github.event.after }}
       - name: Populate dependencies
         if: matrix.go-version == '1.15.x' # Use latest Go to populate vendor.
         run: '(test -d vendor && echo vendor found) || go mod vendor'
@@ -34,8 +41,12 @@ jobs:
         id: test
         run: |
           make test-unit
-          OUTPUT=$(go tool cover -func=./unit.coverprofile | grep 'total:')
+          go tool cover -func=./unit.coverprofile > unit.txt
+          OUTPUT=$(test -e unit-base.txt && diff unit-base.txt unit.txt || cat unit.txt)
           echo "::set-output name=result::$OUTPUT"
+      - name: Store master coverage
+        if: ${{ github.ref == 'refs/heads/master' }}
+        run: cp unit.txt unit-base.txt
       - name: Comment
         if: matrix.go-version == '1.15.x'
         uses: marocchino/sticky-pull-request-comment@v2
@@ -44,7 +55,9 @@ jobs:
           header: test
           message: |
             ### Unit test coverage
+            ```
             ${{ steps.test.outputs.result }}
+            ```
       - name: Upload code coverage
         if: matrix.go-version == '1.15.x'
         uses: codecov/codecov-action@v1
