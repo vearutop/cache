@@ -33,7 +33,8 @@ jobs:
       - name: Test
         id: test
         run: |
-          OUTPUT=$(make test-unit)
+          make test-unit
+          OUTPUT=$(go tool cover -func=./unit.coverprofile)
           echo "::set-output name=result::$OUTPUT"
       - name: Comment
         if: matrix.go-version == '1.15.x'
