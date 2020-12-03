@@ -42,7 +42,7 @@ jobs:
         run: |
           make test-unit
           go tool cover -func=./unit.coverprofile > unit.txt
-          OUTPUT=$(test -e unit-base.txt && diff unit-base.txt unit.txt || cat unit.txt)
+          OUTPUT=$(test -e unit-base.txt && diff unit-base.txt unit.txt || grep 'total:' unit.txt)
           echo "::set-output name=result::$OUTPUT"
       - name: Store master coverage
         if: ${{ github.ref == 'refs/heads/master' }}
