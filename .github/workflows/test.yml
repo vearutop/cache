@@ -42,7 +42,7 @@ jobs:
         run: |
           make test-unit
           go tool cover -func=./unit.coverprofile > unit.txt
-          OUTPUT=$(test -e unit-base.txt && diff -u unit-base.txt unit.txt || grep 'total:' unit.txt)
+          OUTPUT=$(test -e unit-base.txt && diff unit-base.txt unit.txt || grep 'total:' unit.txt)
           OUTPUT="${OUTPUT//'%'/'%25'}"
           OUTPUT="${OUTPUT//$'\n'/'%0A'}"
           OUTPUT="${OUTPUT//$'\r'/'%0D'}"
