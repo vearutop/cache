@@ -58,7 +58,7 @@ jobs:
           header: test
           message: |
             ### Unit test coverage
-            ```
+            ```diff
             ${{ steps.test.outputs.result }}
             ```
       - name: Upload code coverage
