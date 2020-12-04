@@ -1,12 +1,10 @@
 name: test
 on:
   push:
-    tags:
-      - v*
     branches:
       - master
-      - main
   pull_request:
+  workflow_dispatch:
 env:
   GO111MODULE: "on"
 jobs:
@@ -33,7 +31,7 @@ jobs:
           path: |
             unit-base.txt
           # Use base sha for PR or new commit hash for master/main push in test result key.
-          key: ${{ runner.os }}-test-unit-${{ (github.event.pull_request.base.sha != github.event.after) && github.event.pull_request.base.sha || github.event.after }}
+          key: ${{ runner.os }}-test-coverage-${{ (github.event.pull_request.base.sha != github.event.after) && github.event.pull_request.base.sha || github.event.after }}
       - name: Populate dependencies
         if: matrix.go-version == '1.15.x' # Use latest Go to populate vendor.
         run: '(test -d vendor && echo vendor found) || go mod vendor'
@@ -47,7 +45,7 @@ jobs:
           OUTPUT="${OUTPUT//$'\n'/'%0A'}"
           OUTPUT="${OUTPUT//$'\r'/'%0D'}"
           echo "::set-output name=result::$OUTPUT"
-      - name: Store master coverage
+      - name: Store base coverage
         if: ${{ github.ref == 'refs/heads/master' }}
         run: cp unit.txt unit-base.txt
       - name: Comment
