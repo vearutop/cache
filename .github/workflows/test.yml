@@ -62,9 +62,7 @@ jobs:
             <details>
               <summary>Coverage diff with base branch</summary>
 
-            ```diff
             ${{ steps.test.outputs.diff }}
-            ```
 
             </details>
       - name: Upload code coverage
