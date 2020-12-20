@@ -11,24 +11,32 @@ import (
 
 var _ ReadWriter = &SyncMap{}
 
-// SyncMap is an in-memory cache.
 type SyncMap struct {
+	*syncMap
+}
+
+// SyncMap is an in-rwMutexMap cache.
+type syncMap struct {
 	data sync.Map
 
 	*trait
 }
 
-// NewSyncMap creates an instance of in-memory cache with optional configuration.
+// NewSyncMap creates an instance of in-rwMutexMap cache with optional configuration.
 func NewSyncMap(cfg ...MemoryConfig) *SyncMap {
-	c := &SyncMap{}
+	c := &syncMap{}
 
-	c.trait = newTrait(c, cfg...)
+	C := &SyncMap{
+		syncMap: c,
+	}
 
-	runtime.SetFinalizer(c, func(m *SyncMap) {
+	c.trait = newTrait(C, cfg...)
+
+	runtime.SetFinalizer(C, func(m *SyncMap) {
 		close(c.closed)
 	})
 
-	return c
+	return C
 }
 
 // Read gets value.
@@ -38,7 +46,10 @@ func (c *SyncMap) Read(ctx context.Context, key string) (interface{}, error) {
 	}
 
 	v, found := c.data.Load(key)
-	cacheEntry := v.(entry)
+	var cacheEntry entry
+	if v != nil {
+		cacheEntry = v.(entry)
+	}
 
 	return c.prepareRead(ctx, cacheEntry, found)
 }
@@ -131,10 +142,12 @@ func (c *SyncMap) Walk(walkFn func(key string, value Entry) error) (int, error) 
 		err := walkFn(key.(string), value.(entry))
 		if err != nil {
 			resultErr = err
+
 			return false
 		}
 
 		n++
+
 		return true
 	})
 

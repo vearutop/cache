@@ -18,7 +18,7 @@ func ExampleNewMemory() {
 		Logger:     &ctxd.LoggerMock{},
 		Stats:      &stats.TrackerMock{},
 
-		// Tweak these parameters to reduce/stabilize memory consumption at cost of cache hit rate.
+		// Tweak these parameters to reduce/stabilize rwMutexMap consumption at cost of cache hit rate.
 		// If cache cardinality and size are reasonable, default values should be fine.
 		DeleteExpiredAfter:       time.Hour,
 		DeleteExpiredJobInterval: 10 * time.Minute,

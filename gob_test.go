@@ -76,6 +76,7 @@ func BenchmarkMemory_Dump(b *testing.B) {
 		err := c1.Write(ctx, "key"+strconv.Itoa(i), SomeEntity{SomeField: "foo"})
 		if err != nil {
 			assert.NoError(b, err)
+
 			return
 		}
 	}

@@ -1,4 +1,4 @@
-// Package cache defines caching contract and provides in-memory implementation.
+// Package cache defines caching contract and provides in-rwMutexMap implementation.
 // Focused on resilient and race-free operation on top of external sources.
 //
 // Features:

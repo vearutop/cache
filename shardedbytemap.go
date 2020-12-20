@@ -18,8 +18,12 @@ type hashedBucket struct {
 	data map[uint64]entry
 }
 
-// ShardedByteMap is an in-ShardedByteMap cache.
 type ShardedByteMap struct {
+	*shardedByteMap
+}
+
+// ShardedByteMap is an in-ShardedByteMap cache.
+type shardedByteMap struct {
 	hashedBuckets [64]hashedBucket
 
 	*trait
@@ -27,19 +31,22 @@ type ShardedByteMap struct {
 
 // NewShardedByteMap creates an instance of in-ShardedByteMap cache with optional configuration.
 func NewShardedByteMap(cfg ...MemoryConfig) *ShardedByteMap {
-	c := &ShardedByteMap{}
+	c := &shardedByteMap{}
+	C := &ShardedByteMap{
+		shardedByteMap: c,
+	}
 
 	for i := 0; i < shards; i++ {
 		c.hashedBuckets[i].data = make(map[uint64]entry)
 	}
 
-	c.trait = newTrait(c, cfg...)
+	c.trait = newTrait(C, cfg...)
 
-	runtime.SetFinalizer(c, func(m *ShardedByteMap) {
+	runtime.SetFinalizer(C, func(m *ShardedByteMap) {
 		close(c.closed)
 	})
 
-	return c
+	return C
 }
 
 // Read gets value.

@@ -21,10 +21,10 @@ type FailoverConfig struct {
 	// Name is added to logs and stats.
 	Name string
 
-	// Upstream is a cache instance, in-memory created by default.
+	// Upstream is a cache instance, in-rwMutexMap created by default.
 	Upstream ReadWriter
 
-	// UpstreamConfig is a configuration for in-memory cache instance if Upstream is not provided.
+	// UpstreamConfig is a configuration for in-rwMutexMap cache instance if Upstream is not provided.
 	UpstreamConfig MemoryConfig
 
 	// DefaultTTL is default ttl to store cached value, only used with nil Upstream.
@@ -76,7 +76,7 @@ type Stale = Failover
 // Please use NewFailover to create instance.
 type Failover struct {
 	// Errors caches errors of failed updates.
-	Errors *Memory
+	Errors *RWMutexMap
 
 	upstream ReadWriter
 	lock     sync.Mutex               // Securing keyLocks

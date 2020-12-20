@@ -54,6 +54,7 @@ func WithSkipRead(ctx context.Context) context.Context {
 // SkipRead returns true if cache read is ignored in context.
 func SkipRead(ctx context.Context) bool {
 	_, ok := ctx.Value(skipReadCtxKey{}).(bool)
+
 	return ok
 }
 

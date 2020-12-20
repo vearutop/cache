@@ -151,7 +151,7 @@ func (c *trait) cleaner(b backend) {
 	}
 }
 
-// MemoryConfig controls in-Memory cache instance.
+// MemoryConfig controls in-RWMutexMap cache instance.
 type MemoryConfig struct {
 	// Logger is an instance of contextualized logger, can be nil.
 	Logger ctxd.Logger
