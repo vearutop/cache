@@ -66,15 +66,14 @@ func BenchmarkFailover_Get(b *testing.B) {
 
 func BenchmarkMemory_Read(b *testing.B) {
 	ctx := context.Background()
-	c := cache.NewMemory()
+	c := cache.NewRWMutexMap()
 
 	hit := func(country, sku, week string) (map[string]string, error) {
 		cacheKey := country + ":" + week + ":" + sku
 
 		value, err := c.Read(ctx, cacheKey)
-
 		if err != nil {
-			if err == cache.ErrExpiredCacheItem && value != nil {
+			if err == cache.ErrExpiredCacheItem && value != nil { // nolint:errorlint // Expecting unwrapped error.
 				writeErr := c.Write(ctx, cacheKey, value)
 				if writeErr != nil {
 					return nil, writeErr
@@ -404,7 +403,7 @@ func TestFailover_Get_updateErr(t *testing.T) {
 	ctx := context.Background()
 	key := "some-key"
 
-	mc := cache.NewMemory()
+	mc := cache.NewRWMutexMap()
 
 	c := cache.NewFailover(cache.FailoverConfig{
 		Upstream: mc,
@@ -437,7 +436,7 @@ func TestFailover_Get_updateErr(t *testing.T) {
 
 func TestFailover_Get_mutability(t *testing.T) {
 	s := &stats.TrackerMock{}
-	mc := cache.NewMemory()
+	mc := cache.NewRWMutexMap()
 	c := cache.NewFailover(cache.FailoverConfig{
 		Upstream:          mc,
 		Stats:             s,

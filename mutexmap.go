@@ -22,7 +22,7 @@ type mutexMap struct {
 	*trait
 }
 
-// NewMemory creates an instance of in-rwMutexMap cache with optional configuration.
+// NewRWMutexMap creates an instance of in-rwMutexMap cache with optional configuration.
 func NewMutexMap(cfg ...MemoryConfig) *MutexMap {
 	c := &mutexMap{
 		data: map[string]entry{},
@@ -58,7 +58,7 @@ func (c *MutexMap) Write(ctx context.Context, k string, v interface{}) error {
 	c.Lock()
 	defer c.Unlock()
 
-	//ttl := c.config.TimeToLive
+	// ttl := c.config.TimeToLive
 	ttl := TTL(ctx)
 	if ttl == DefaultTTL {
 		ttl = c.config.TimeToLive
@@ -123,7 +123,6 @@ func (c *MutexMap) clearExpiredBefore(expirationBoundary time.Time) {
 		delete(c.data, k)
 	}
 	c.Unlock()
-
 }
 
 // Len returns number of elements in cache.

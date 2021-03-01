@@ -2,9 +2,10 @@ package cache
 
 import (
 	"context"
+	"time"
+
 	"github.com/bool64/ctxd"
 	"github.com/bool64/stats"
-	"time"
 )
 
 type trait struct {

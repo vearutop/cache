@@ -22,8 +22,8 @@ type rwMutexMap struct {
 	*trait
 }
 
-// NewMemory creates an instance of in-rwMutexMap cache with optional configuration.
-func NewMemory(cfg ...MemoryConfig) *RWMutexMap {
+// NewRWMutexMap creates an instance of in-rwMutexMap cache with optional configuration.
+func NewRWMutexMap(cfg ...MemoryConfig) *RWMutexMap {
 	c := &rwMutexMap{
 		data: map[string]entry{},
 	}
@@ -58,7 +58,7 @@ func (c *RWMutexMap) Write(ctx context.Context, k string, v interface{}) error {
 	c.Lock()
 	defer c.Unlock()
 
-	//ttl := c.config.TimeToLive
+	// ttl := c.config.TimeToLive
 	ttl := TTL(ctx)
 	if ttl == DefaultTTL {
 		ttl = c.config.TimeToLive

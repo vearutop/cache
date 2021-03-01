@@ -26,7 +26,7 @@ func TestMemory(t *testing.T) {
 		DeleteExpiredJobInterval: 8 * time.Millisecond,
 		ItemsCountReportInterval: 10 * time.Millisecond,
 	}
-	mc := cache.NewMemory(cfg)
+	mc := cache.NewRWMutexMap(cfg)
 	val, err := mc.Read(ctx, "key")
 	assert.Nil(t, val)
 	assert.EqualError(t, err, cache.ErrCacheItemNotFound.Error())
@@ -75,7 +75,7 @@ func TestMemory(t *testing.T) {
 
 func TestMemory_Read_concurrency(t *testing.T) {
 	st := &stats.TrackerMock{}
-	c := cache.NewMemory(cache.MemoryConfig{
+	c := cache.NewRWMutexMap(cache.MemoryConfig{
 		Stats: st,
 	})
 	ctx := context.Background()

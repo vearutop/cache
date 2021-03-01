@@ -12,12 +12,12 @@ import (
 )
 
 // FailoverConfig is optional configuration for NewFailover.
-type FailoverConfig struct {
+type FailoverByteConfig struct {
 	// Name is added to logs and stats.
 	Name string
 
 	// Upstream is a cache instance, in-rwMutexMap created by default.
-	Upstream ReadWriter
+	Upstream ReadWriterByte
 
 	// UpstreamConfig is a configuration for in-rwMutexMap cache instance if Upstream is not provided.
 	UpstreamConfig MemoryConfig
@@ -54,14 +54,14 @@ type FailoverConfig struct {
 // Failover automatically updates cache without races.
 //
 // Please use NewFailover to create instance.
-type Failover struct {
+type FailoverByte struct {
 	// Errors caches errors of failed updates.
-	Errors *RWMutexMap
+	Errors *ShardedByteMap
 
-	upstream ReadWriter
+	upstream ReadWriterByte
 	lock     sync.Mutex               // Securing keyLocks
 	keyLocks map[string]chan struct{} // Preventing update concurrency per key
-	config   FailoverConfig
+	config   FailoverByteConfig
 	log      ctxd.Logger
 	stat     stats.Tracker
 }
@@ -71,7 +71,7 @@ type Failover struct {
 // Build is locked per key to avoid concurrent updates.
 // Stale value is served during non-concurrent update (up to FailoverConfig.UpdateTTL long).
 // Optional configuration can be provided with FailoverConfig (only first argument is used).
-func NewFailover(config FailoverConfig) *Failover {
+func NewFailoverByte(config FailoverByteConfig) *FailoverByte {
 	if config.UpdateTTL == 0 {
 		config.UpdateTTL = time.Minute
 	}
@@ -80,7 +80,7 @@ func NewFailover(config FailoverConfig) *Failover {
 		config.FailedUpdateTTL = 20 * time.Second
 	}
 
-	sc := &Failover{}
+	sc := &FailoverByte{}
 	sc.config = config
 
 	sc.log = config.Logger
@@ -99,11 +99,11 @@ func NewFailover(config FailoverConfig) *Failover {
 		config.UpstreamConfig.Name = config.Name
 		config.UpstreamConfig.Logger = config.Logger
 		config.UpstreamConfig.Stats = config.Stats
-		sc.upstream = NewRWMutexMap(config.UpstreamConfig)
+		sc.upstream = NewShardedByteMap(config.UpstreamConfig)
 	}
 
 	if config.FailedUpdateTTL > -1 {
-		sc.Errors = NewRWMutexMap(MemoryConfig{
+		sc.Errors = NewShardedByteMap(MemoryConfig{
 			Name:       "err_" + config.Name,
 			Logger:     config.Logger,
 			Stats:      config.Stats,
@@ -121,7 +121,7 @@ func NewFailover(config FailoverConfig) *Failover {
 }
 
 // Get returns value from cache or from build function.
-func (sc *Failover) Get(ctx context.Context, key string, buildFunc func(ctx context.Context) (interface{}, error)) (interface{}, error) {
+func (sc *FailoverByte) Get(ctx context.Context, key []byte, buildFunc func(ctx context.Context) (interface{}, error)) (interface{}, error) {
 	var (
 		value interface{}
 		err   error
@@ -142,10 +142,10 @@ func (sc *Failover) Get(ctx context.Context, key string, buildFunc func(ctx cont
 
 	alreadyLocked := false
 
-	keyLock, alreadyLocked = sc.keyLocks[key]
+	keyLock, alreadyLocked = sc.keyLocks[string(key)]
 	if !alreadyLocked {
 		keyLock = make(chan struct{})
-		sc.keyLocks[key] = keyLock
+		sc.keyLocks[string(key)] = keyLock
 	}
 	sc.lock.Unlock()
 
@@ -153,7 +153,7 @@ func (sc *Failover) Get(ctx context.Context, key string, buildFunc func(ctx cont
 	defer func() {
 		if !alreadyLocked {
 			sc.lock.Lock()
-			delete(sc.keyLocks, key)
+			delete(sc.keyLocks, string(key))
 			close(keyLock)
 			sc.lock.Unlock()
 		}
@@ -218,7 +218,7 @@ func (sc *Failover) Get(ctx context.Context, key string, buildFunc func(ctx cont
 	go func() {
 		defer func() {
 			sc.lock.Lock()
-			delete(sc.keyLocks, key)
+			delete(sc.keyLocks, string(key))
 			close(keyLock)
 			sc.lock.Unlock()
 		}()
@@ -235,7 +235,7 @@ func (sc *Failover) Get(ctx context.Context, key string, buildFunc func(ctx cont
 	return value, nil
 }
 
-func (sc *Failover) freshEnough(err error, value interface{}) (interface{}, bool) {
+func (sc *FailoverByte) freshEnough(err error, value interface{}) (interface{}, bool) {
 	var errExpired ErrExpired
 
 	if errors.As(err, &errExpired) {
@@ -257,7 +257,7 @@ func (sc *Failover) freshEnough(err error, value interface{}) (interface{}, bool
 	return nil, false
 }
 
-func (sc *Failover) waitForValue(ctx context.Context, key string, keyLock chan struct{}) (interface{}, error) {
+func (sc *FailoverByte) waitForValue(ctx context.Context, key []byte, keyLock chan struct{}) (interface{}, error) {
 	sc.log.Debug(ctx, "waiting for cache value", "name", sc.config.Name, "key", key)
 
 	// Waiting for value built by keyLock owner.
@@ -279,7 +279,7 @@ func (sc *Failover) waitForValue(ctx context.Context, key string, keyLock chan s
 	return value, err
 }
 
-func (sc *Failover) refreshStale(ctx context.Context, key string, value interface{}) error {
+func (sc *FailoverByte) refreshStale(ctx context.Context, key []byte, value interface{}) error {
 	sc.log.Debug(ctx, "refreshing expired value",
 		"name", sc.config.Name,
 		"key", key,
@@ -294,9 +294,9 @@ func (sc *Failover) refreshStale(ctx context.Context, key string, value interfac
 	return nil
 }
 
-func (sc *Failover) doBuild(
+func (sc *FailoverByte) doBuild(
 	ctx context.Context,
-	key string,
+	key []byte,
 	value interface{},
 	buildFunc func(ctx context.Context) (interface{}, error),
 ) (interface{}, error) {
@@ -335,7 +335,7 @@ func (sc *Failover) doBuild(
 	return uVal, err
 }
 
-func (sc *Failover) ctxSync(ctx context.Context, err error) (context.Context, bool) {
+func (sc *FailoverByte) ctxSync(ctx context.Context, err error) (context.Context, bool) {
 	syncUpdate := !sc.config.BackgroundUpdate || err != nil
 	if syncUpdate {
 		return ctx, true
@@ -345,7 +345,7 @@ func (sc *Failover) ctxSync(ctx context.Context, err error) (context.Context, bo
 	return detachedContext{ctx}, false
 }
 
-func (sc *Failover) recentlyFailed(ctx context.Context, key string) error {
+func (sc *FailoverByte) recentlyFailed(ctx context.Context, key []byte) error {
 	if sc.config.FailedUpdateTTL > -1 {
 		errVal, err := sc.Errors.Read(ctx, key)
 		if err == nil {
@@ -356,7 +356,7 @@ func (sc *Failover) recentlyFailed(ctx context.Context, key string) error {
 	return nil
 }
 
-func (sc *Failover) observeMutability(ctx context.Context, uVal, value interface{}) {
+func (sc *FailoverByte) observeMutability(ctx context.Context, uVal, value interface{}) {
 	equal := reflect.DeepEqual(value, uVal)
 	if !equal {
 		sc.stat.Add(ctx, MetricChanged, 1, "name", sc.config.Name)

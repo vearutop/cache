@@ -10,9 +10,9 @@ import (
 	"github.com/bool64/stats"
 )
 
-func ExampleNewMemory() {
+func ExampleNewRWMutexMap() {
 	// Create cache instance.
-	c := cache.NewMemory(cache.MemoryConfig{
+	c := cache.NewRWMutexMap(cache.MemoryConfig{
 		Name:       "dogs",
 		TimeToLive: 13 * time.Minute,
 		Logger:     &ctxd.LoggerMock{},

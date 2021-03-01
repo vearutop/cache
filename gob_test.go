@@ -26,8 +26,8 @@ func TestMemory_Dump(t *testing.T) {
 
 	assert.Equal(t, uint64(0xf6c7853229d11f18), cache.GobTypesHash())
 
-	c1 := cache.NewMemory()
-	c2 := cache.NewMemory()
+	c1 := cache.NewRWMutexMap()
+	c2 := cache.NewRWMutexMap()
 	ctx := context.Background()
 
 	require.NoError(t, c1.Write(ctx, "key1", SomeEntity{
@@ -66,8 +66,8 @@ func TestMemory_Dump(t *testing.T) {
 func BenchmarkMemory_Dump(b *testing.B) {
 	cache.GobRegister(SomeEntity{})
 
-	c1 := cache.NewMemory()
-	c2 := cache.NewMemory()
+	c1 := cache.NewRWMutexMap()
+	c2 := cache.NewRWMutexMap()
 	ctx := context.Background()
 
 	b.ReportAllocs()

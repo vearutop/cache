@@ -11,8 +11,8 @@ import (
 )
 
 func TestInvalidator_Invalidate(t *testing.T) {
-	cache1 := cache.NewMemory()
-	cache2 := cache.NewMemory()
+	cache1 := cache.NewRWMutexMap()
+	cache2 := cache.NewRWMutexMap()
 
 	i := &cache.Invalidator{}
 	err := i.Invalidate()

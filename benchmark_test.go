@@ -11,7 +11,7 @@ import (
 )
 
 func Benchmark_Memory(b *testing.B) {
-	c := cache.NewMemory()
+	c := cache.NewRWMutexMap()
 	ctx := context.Background()
 
 	b.ReportAllocs()
@@ -88,7 +88,6 @@ func Benchmark_FailoverSyncRead(b *testing.B) {
 // Benchmark_FailoverSyncRead-16       	 3199423	       355 ns/op	     113 B/op	       3 allocs/op
 // Benchmark_FailoverAlwaysBuild-16    	 1000000	      1134 ns/op	     523 B/op	       7 allocs/op
 // Benchmark_Patrickmn-4          	     5000000	       258 ns/op	      16 B/op	       1 allocs/op
-//*
 func Benchmark_Patrickmn(b *testing.B) {
 	c := pca.New(5*time.Minute, 10*time.Minute)
 

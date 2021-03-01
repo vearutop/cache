@@ -2,11 +2,12 @@ package cache
 
 import (
 	"context"
-	"github.com/cespare/xxhash/v2"
 	"math/rand"
 	"runtime"
 	"sync"
 	"time"
+
+	"github.com/cespare/xxhash/v2"
 )
 
 var _ ReadWriter = &ShardedMap{}
@@ -69,7 +70,7 @@ func (c *ShardedMap) Write(ctx context.Context, k string, v interface{}) error {
 	c.buckets[h].Lock()
 	defer c.buckets[h].Unlock()
 
-	//ttl := c.config.TimeToLive
+	// ttl := c.config.TimeToLive
 	ttl := TTL(ctx)
 	if ttl == DefaultTTL {
 		ttl = c.config.TimeToLive
@@ -94,7 +95,7 @@ func (c *ShardedMap) Write(ctx context.Context, k string, v interface{}) error {
 
 // ExpireAll marks all entries as expired, they can still serve stale cache.
 func (c *ShardedMap) ExpireAll() {
-	//now := time.Now()
+	// now := time.Now()
 
 	//c.Lock()
 	//for k, v := range c.data {
@@ -106,9 +107,9 @@ func (c *ShardedMap) ExpireAll() {
 
 // RemoveAll deletes all entries.
 func (c *ShardedMap) RemoveAll() {
-	//c.Lock()
-	//c.data = make(map[string]entry)
-	//c.Unlock()
+	// c.Lock()
+	// c.data = make(map[string]entry)
+	// c.Unlock()
 }
 
 func (c *ShardedMap) clearExpiredBefore(expirationBoundary time.Time) {
@@ -135,7 +136,7 @@ func (c *ShardedMap) clearExpiredBefore(expirationBoundary time.Time) {
 	//}
 	//c.Unlock()
 
-	//c.evictHeapInUse()
+	// c.evictHeapInUse()
 }
 
 // Len returns number of elements in cache.
