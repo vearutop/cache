@@ -18,10 +18,10 @@ import (
 )
 
 func Benchmark_concurrentRead(b *testing.B) {
-	for _, cardinality := range []int{10000} {
+	for _, cardinality := range []int{1e4} {
 		cardinality := cardinality
 
-		for _, numRoutines := range []int{1, 50} {
+		for _, numRoutines := range []int{1, runtime.GOMAXPROCS(0)} {
 			numRoutines := numRoutines
 
 			for _, loader := range []cacheLoader{
@@ -94,6 +94,7 @@ const (
 type cacheLoader interface {
 	make(b *testing.B, cardinality int) cacheLoader
 	run(b *testing.B, cnt int)
+	runOne(i int) bool
 }
 
 ////////
@@ -153,6 +154,26 @@ func (sbm failoverShardedByteMap) run(b *testing.B, cnt int) {
 	}
 }
 
+func (sbm failoverShardedByteMap) runOne(i int) bool {
+	ctx := context.Background()
+	buf := make([]byte, 0, 10)
+
+	i = (i ^ 12345) % sbm.cardinality
+
+	buf = append(buf[:0], []byte(keyPrefix)...)
+	buf = append(buf, []byte(strconv.Itoa(i))...)
+
+	v, err := sbm.c.Get(ctx, buf, func(ctx context.Context) (interface{}, error) {
+		return smallCachedValue{}, nil
+	})
+
+	if v.(smallCachedValue).i != i || err != nil {
+		return false
+	}
+
+	return true
+}
+
 type failoverSyncMap struct {
 	c           *cache.Failover
 	cardinality int
@@ -202,6 +223,23 @@ func (sbm failoverSyncMap) run(b *testing.B, cnt int) {
 	}
 }
 
+func (sbm failoverSyncMap) runOne(i int) bool {
+	ctx := context.Background()
+
+	i = (i ^ 12345) % sbm.cardinality
+	k := keyPrefix + strconv.Itoa(i)
+
+	v, err := sbm.c.Get(ctx, k, func(ctx context.Context) (interface{}, error) {
+		return smallCachedValue{}, nil
+	})
+
+	if v.(smallCachedValue).i != i || err != nil {
+		return false
+	}
+
+	return true
+}
+
 type syncMap struct {
 	c           *cache.SyncMap
 	cardinality int
@@ -243,6 +281,20 @@ func (sbm syncMap) run(b *testing.B, cnt int) {
 			b.Fail()
 		}
 	}
+}
+
+func (sbm syncMap) runOne(i int) bool {
+	ctx := context.Background()
+
+	i = (i ^ 12345) % sbm.cardinality
+	k := keyPrefix + strconv.Itoa(i)
+
+	v, err := sbm.c.Read(ctx, k)
+
+	if v.(smallCachedValue).i != i || err != nil {
+		return false
+	}
+	return true
 }
 
 type rwMutexMap struct {
@@ -288,6 +340,20 @@ func (sbm rwMutexMap) run(b *testing.B, cnt int) {
 	}
 }
 
+func (sbm rwMutexMap) runOne(i int) bool {
+	ctx := context.Background()
+	i = (i ^ 12345) % sbm.cardinality
+	k := keyPrefix + strconv.Itoa(i)
+
+	v, err := sbm.c.Read(ctx, k)
+
+	if v.(smallCachedValue).i != i || err != nil {
+		return false
+	}
+
+	return true
+}
+
 type patrickmn struct {
 	c           *pca.Cache
 	cardinality int
@@ -320,6 +386,17 @@ func (sbm patrickmn) run(b *testing.B, cnt int) {
 			b.Fail()
 		}
 	}
+}
+
+func (sbm patrickmn) runOne(i int) bool {
+	i = (i ^ 12345) % sbm.cardinality
+
+	v, found := sbm.c.Get(keyPrefix + strconv.Itoa(i))
+
+	if v.(smallCachedValue).i != i || !found {
+		return false
+	}
+	return true
 }
 
 type rist struct {
@@ -364,6 +441,22 @@ func (sbm rist) run(b *testing.B, cnt int) {
 			b.Fatalf("value not equal %s %d %d", k, sm.i, i)
 		}
 	}
+}
+
+func (sbm rist) runOne(i int) bool {
+	i = (i ^ 12345) % sbm.cardinality
+
+	k := keyPrefix + strconv.Itoa(i)
+	v, found := sbm.c.Get(k)
+
+	if !found {
+		return false
+	}
+
+	if sm, ok := v.(smallCachedValue); ok && sm.i != i {
+		return false
+	}
+	return true
 }
 
 func Benchmark_MutexMap_concurrent(b *testing.B) {

@@ -2,10 +2,12 @@ package cache_test
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/VictoriaMetrics/fastcache"
 	"github.com/bool64/cache"
 	pca "github.com/patrickmn/go-cache"
 )
@@ -28,6 +30,14 @@ func Benchmark_Memory(b *testing.B) {
 	}
 }
 
+//Benchmark_SyncMap-8   	 5788734	       227.6 ns/op	      16 B/op	       1 allocs/op
+//Benchmark_SyncMap-8   	 5577684	       219.8 ns/op	      16 B/op	       1 allocs/op
+//Benchmark_SyncMap-8   	 5626167	       218.9 ns/op	      16 B/op	       1 allocs/op
+//Benchmark_SyncMap-8   	 5830920	       219.4 ns/op	      16 B/op	       1 allocs/op
+//Benchmark_SyncMap-8   	 5781390	       203.9 ns/op	      16 B/op	       1 allocs/op
+//Benchmark_SyncMap-8   	 5460158	       204.2 ns/op	      16 B/op	       1 allocs/op
+//Benchmark_SyncMap-8   	 5258498	       205.8 ns/op	      16 B/op	       1 allocs/op
+//Benchmark_SyncMap-8   	 5260357	       203.9 ns/op	      16 B/op	       1 allocs/op
 func Benchmark_SyncMap(b *testing.B) {
 	c := cache.NewSyncMap()
 	ctx := context.Background()
@@ -121,4 +131,36 @@ func Benchmark_FailoverAlwaysBuild(b *testing.B) {
 			return 123, nil
 		})
 	}
+}
+
+func BenchmarkCacheSetGet(b *testing.B) {
+	const items = 1 << 16
+	c := fastcache.New(12 * items)
+	defer c.Reset()
+	b.ReportAllocs()
+	b.SetBytes(2 * items)
+	b.RunParallel(func(pb *testing.PB) {
+		k := []byte("\x00\x00\x00\x00")
+		v := []byte("xyza")
+		var buf []byte
+		for pb.Next() {
+			for i := 0; i < items; i++ {
+				k[0]++
+				if k[0] == 0 {
+					k[1]++
+				}
+				c.Set(k, v)
+			}
+			for i := 0; i < items; i++ {
+				k[0]++
+				if k[0] == 0 {
+					k[1]++
+				}
+				buf = c.Get(buf[:0], k)
+				if string(buf) != string(v) {
+					panic(fmt.Errorf("BUG: invalid value obtained; got %q; want %q", buf, v))
+				}
+			}
+		}
+	})
 }
