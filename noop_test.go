@@ -2,9 +2,10 @@ package cache_test
 
 import (
 	"context"
+	"testing"
+
 	"github.com/bool64/cache"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestNoOp_Read(t *testing.T) {

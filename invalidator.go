@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -23,7 +22,7 @@ type Invalidator struct {
 // Invalidate triggers cache expiration.
 func (i *Invalidator) Invalidate() error {
 	if i.Callbacks == nil {
-		return errors.New("nothing to invalidate")
+		return ErrNothingToInvalidate
 	}
 
 	i.Lock()
@@ -34,8 +33,8 @@ func (i *Invalidator) Invalidate() error {
 	}
 
 	if time.Since(i.lastRun) < i.SkipInterval {
-		return fmt.Errorf("already invalidated at %s, %s did not pass",
-			i.lastRun.String(), i.SkipInterval.String())
+		return fmt.Errorf("%w at %s, %s did not pass",
+			ErrAlreadyInvalidated, i.lastRun.String(), i.SkipInterval.String())
 	}
 
 	i.lastRun = time.Now()

@@ -66,14 +66,14 @@ func BenchmarkFailover_Get(b *testing.B) {
 
 func BenchmarkMemory_Read(b *testing.B) {
 	ctx := context.Background()
-	c := cache.NewMemory()
+	c := cache.NewRWMutexMap()
 
 	hit := func(country, sku, week string) (map[string]string, error) {
 		cacheKey := country + ":" + week + ":" + sku
 
 		value, err := c.Read(ctx, cacheKey)
 		if err != nil {
-			if err == cache.ErrExpiredCacheItem && value != nil {
+			if err == cache.ErrExpiredCacheItem && value != nil { // nolint:errorlint // Expecting unwrapped error.
 				writeErr := c.Write(ctx, cacheKey, value)
 				if writeErr != nil {
 					return nil, writeErr
@@ -217,6 +217,7 @@ func TestFailover_Get_FailedUpdateTTL(t *testing.T) {
 	cnt := 0
 	buildFunc := func(ctx context.Context) (i interface{}, e error) {
 		cnt++
+
 		return "a discarded value", errors.New("failed")
 	}
 
@@ -272,6 +273,7 @@ func TestFailover_Get_BackgroundUpdate(t *testing.T) {
 
 	val, err := c.Get(ctx, "key", func(ctx context.Context) (i interface{}, e error) {
 		atomic.AddInt64(&cnt, 1)
+
 		return "first value", nil
 	})
 	assert.NoError(t, err)
@@ -282,6 +284,7 @@ func TestFailover_Get_BackgroundUpdate(t *testing.T) {
 	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), "key", func(ctx context.Context) (i interface{}, e error) {
 		time.Sleep(time.Millisecond)
 		atomic.AddInt64(&cnt, 1)
+
 		return "second value", nil
 	})
 	assert.NoError(t, err)
@@ -294,6 +297,7 @@ func TestFailover_Get_BackgroundUpdate(t *testing.T) {
 	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), "key", func(ctx context.Context) (i interface{}, e error) {
 		atomic.AddInt64(&cnt, 1)
 		assert.Fail(t, "should not be here")
+
 		return "not relevant", nil
 	})
 	assert.NoError(t, err)
@@ -318,6 +322,7 @@ func TestFailover_Get_BackgroundUpdateMaxExpiration(t *testing.T) {
 
 	val, err := c.Get(ctx, "key", func(ctx context.Context) (i interface{}, e error) {
 		atomic.AddInt64(&cnt, 1)
+
 		return "first value", nil
 	})
 	assert.NoError(t, err)
@@ -328,6 +333,7 @@ func TestFailover_Get_BackgroundUpdateMaxExpiration(t *testing.T) {
 	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), "key", func(ctx context.Context) (i interface{}, e error) {
 		time.Sleep(time.Millisecond)
 		atomic.AddInt64(&cnt, 1)
+
 		return "second value", nil
 	})
 	assert.NoError(t, err)
@@ -340,6 +346,7 @@ func TestFailover_Get_BackgroundUpdateMaxExpiration(t *testing.T) {
 	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), "key", func(ctx context.Context) (i interface{}, e error) {
 		atomic.AddInt64(&cnt, 1)
 		assert.Fail(t, "should not be here")
+
 		return "not relevant", nil
 	})
 	assert.NoError(t, err)
@@ -361,6 +368,7 @@ func TestFailover_Get_SyncUpdate(t *testing.T) {
 
 	val, err := c.Get(ctx, "key", func(ctx context.Context) (i interface{}, e error) {
 		atomic.AddInt64(&cnt, 1)
+
 		return "first value", nil
 	})
 	assert.NoError(t, err)
@@ -370,6 +378,7 @@ func TestFailover_Get_SyncUpdate(t *testing.T) {
 
 	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), "key", func(ctx context.Context) (i interface{}, e error) {
 		atomic.AddInt64(&cnt, 1)
+
 		return "second value", nil
 	})
 	assert.NoError(t, err)
@@ -382,6 +391,7 @@ func TestFailover_Get_SyncUpdate(t *testing.T) {
 	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), "key", func(ctx context.Context) (i interface{}, e error) {
 		atomic.AddInt64(&cnt, 1)
 		assert.Fail(t, "should not be here")
+
 		return "not relevant", nil
 	})
 	assert.NoError(t, err)
@@ -393,7 +403,7 @@ func TestFailover_Get_updateErr(t *testing.T) {
 	ctx := context.Background()
 	key := "some-key"
 
-	mc := cache.NewMemory()
+	mc := cache.NewRWMutexMap()
 
 	c := cache.NewFailover(cache.FailoverConfig{
 		Upstream: mc,
@@ -426,7 +436,7 @@ func TestFailover_Get_updateErr(t *testing.T) {
 
 func TestFailover_Get_mutability(t *testing.T) {
 	s := &stats.TrackerMock{}
-	mc := cache.NewMemory()
+	mc := cache.NewRWMutexMap()
 	c := cache.NewFailover(cache.FailoverConfig{
 		Upstream:          mc,
 		Stats:             s,
@@ -561,6 +571,7 @@ func TestFailover_Get_lowCardinalityKey(t *testing.T) {
 			ctx := ctxd.AddFields(ctxs[k], "tx", atomic.LoadInt64(&seq))
 			v, err := c.Get(cache.WithTTL(ctx, time.Minute, false), k, func(ctx context.Context) (interface{}, error) {
 				time.Sleep(10 * time.Microsecond)
+
 				return 123, nil
 			})
 			assert.Equal(t, 123, v)
@@ -581,6 +592,7 @@ func TestFailover_Get_lowCardinalityKey(t *testing.T) {
 		for _, buf := range bufs {
 			if bytes.Count(buf.Bytes(), []byte("wrote")) > 1 {
 				assert.Fail(t, "unexpected multiple cache writes", buf.String())
+
 				break
 			}
 		}
@@ -631,6 +643,7 @@ func TestFailover_Get_staleBlock(t *testing.T) {
 
 			v, err := c.Get(cache.WithTTL(ctx, time.Minute, false), k, func(ctx context.Context) (interface{}, error) {
 				<-blockUpdate
+
 				return 123, nil
 			})
 			assert.Equal(t, 123, v)
@@ -718,6 +731,7 @@ func TestFailover_Get_staleValue(t *testing.T) {
 
 			v, err := c.Get(cache.WithTTL(ctx, time.Hour, false), k, func(ctx context.Context) (interface{}, error) {
 				time.Sleep(10 * time.Millisecond)
+
 				return 123, nil
 			})
 			assert.Equal(t, 123, v)

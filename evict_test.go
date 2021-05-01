@@ -11,7 +11,7 @@ import (
 )
 
 func TestMemory_evictHeapInuse(t *testing.T) {
-	m := NewMemory(MemoryConfig{
+	m := NewRWMutexMap(MemoryConfig{
 		HeapInUseSoftLimit: 1, // Setting heap threshold to 1B to force eviction.
 	})
 
@@ -41,7 +41,7 @@ func TestMemory_evictHeapInuse(t *testing.T) {
 }
 
 func TestMemory_evictHeapInuse_disabled(t *testing.T) {
-	m := NewMemory(MemoryConfig{
+	m := NewRWMutexMap(MemoryConfig{
 		HeapInUseSoftLimit: 0, // Setting heap threshold to 0 to disable eviction.
 	})
 
@@ -60,7 +60,7 @@ func TestMemory_evictHeapInuse_disabled(t *testing.T) {
 }
 
 func TestMemory_evictHeapInuse_skipped(t *testing.T) {
-	m := NewMemory(MemoryConfig{
+	m := NewRWMutexMap(MemoryConfig{
 		HeapInUseSoftLimit: 1e10, // Setting heap threshold to big value to skip eviction.
 	})
 
@@ -79,7 +79,7 @@ func TestMemory_evictHeapInuse_skipped(t *testing.T) {
 }
 
 func TestMemory_evictHeapInuse_concurrency(t *testing.T) {
-	m := NewMemory(MemoryConfig{
+	m := NewRWMutexMap(MemoryConfig{
 		HeapInUseSoftLimit: 1, // Setting heap threshold to 1B value to force eviction.
 	})
 

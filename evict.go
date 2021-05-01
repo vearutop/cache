@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func (c *Memory) evictHeapInUse() {
+func (c *RWMutexMap) evictHeapInUse() {
 	if c.config.HeapInUseSoftLimit == 0 {
 		return
 	}

@@ -2,24 +2,29 @@ package cache
 
 import (
 	"context"
-	"github.com/cespare/xxhash/v2"
 	"math/rand"
 	"runtime"
 	"sync"
 	"time"
+
+	"github.com/cespare/xxhash/v2"
 )
 
-//var _ ReadWriter = &ShardedByteMap{}
+// var _ ReadWriter = &ShardedByteMap{}
 
-//const shards = 64
+// const shards = 64
 
 type hashedBucket struct {
 	sync.RWMutex
 	data map[uint64]entry
 }
 
-// ShardedByteMap is an in-ShardedByteMap cache.
 type ShardedByteMap struct {
+	*shardedByteMap
+}
+
+// ShardedByteMap is an in-ShardedByteMap cache.
+type shardedByteMap struct {
 	hashedBuckets [64]hashedBucket
 
 	*trait
@@ -27,19 +32,22 @@ type ShardedByteMap struct {
 
 // NewShardedByteMap creates an instance of in-ShardedByteMap cache with optional configuration.
 func NewShardedByteMap(cfg ...MemoryConfig) *ShardedByteMap {
-	c := &ShardedByteMap{}
+	c := &shardedByteMap{}
+	C := &ShardedByteMap{
+		shardedByteMap: c,
+	}
 
 	for i := 0; i < shards; i++ {
 		c.hashedBuckets[i].data = make(map[uint64]entry)
 	}
 
-	c.trait = newTrait(c, cfg...)
+	c.trait = newTrait(C, cfg...)
 
-	runtime.SetFinalizer(c, func(m *ShardedByteMap) {
+	runtime.SetFinalizer(C, func(m *ShardedByteMap) {
 		close(c.closed)
 	})
 
-	return c
+	return C
 }
 
 // Read gets value.
@@ -64,7 +72,7 @@ func (c *ShardedByteMap) Write(ctx context.Context, k []byte, v interface{}) err
 	b.Lock()
 	defer b.Unlock()
 
-	//ttl := c.config.TimeToLive
+	// ttl := c.config.TimeToLive
 	ttl := TTL(ctx)
 	if ttl == DefaultTTL {
 		ttl = c.config.TimeToLive
@@ -89,7 +97,7 @@ func (c *ShardedByteMap) Write(ctx context.Context, k []byte, v interface{}) err
 
 // ExpireAll marks all entries as expired, they can still serve stale cache.
 func (c *ShardedByteMap) ExpireAll() {
-	//now := time.Now()
+	// now := time.Now()
 
 	//c.Lock()
 	//for k, v := range c.data {
@@ -101,9 +109,9 @@ func (c *ShardedByteMap) ExpireAll() {
 
 // RemoveAll deletes all entries.
 func (c *ShardedByteMap) RemoveAll() {
-	//c.Lock()
-	//c.data = make(map[string]entry)
-	//c.Unlock()
+	// c.Lock()
+	// c.data = make(map[string]entry)
+	// c.Unlock()
 }
 
 func (c *ShardedByteMap) clearExpiredBefore(expirationBoundary time.Time) {
@@ -130,7 +138,7 @@ func (c *ShardedByteMap) clearExpiredBefore(expirationBoundary time.Time) {
 	//}
 	//c.Unlock()
 
-	//c.evictHeapInUse()
+	// c.evictHeapInUse()
 }
 
 // Len returns number of elements in cache.

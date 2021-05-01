@@ -2,17 +2,8 @@ package cache
 
 import (
 	"context"
-	"errors"
-	"github.com/swaggest/usecase/status"
 	"io"
 	"time"
-)
-
-var (
-	// ErrExpiredCacheItem indicates expired cache entry.
-	ErrExpiredCacheItem = errors.New("expired cache item")
-	// ErrCacheItemNotFound indicates missing cache entry.
-	ErrCacheItemNotFound = status.Wrap(errors.New("missing cache item"), status.NotFound)
 )
 
 // DefaultTTL indicates default (unlimited ttl) value for entry expiration time.
@@ -32,6 +23,25 @@ type Reader interface {
 type Writer interface {
 	// Write stores value in cache with a given key.
 	Write(ctx context.Context, key string, value interface{}) error
+}
+
+// Reader reads from cache.
+type ReaderByte interface {
+	// Read returns cached value and/or error.
+	// if ErrExpiredCacheItem is returned, expired cache value must be returned as well.
+	Read(ctx context.Context, key []byte) (interface{}, error)
+}
+
+// Writer writes to cache.
+type WriterByte interface {
+	// Write stores value in cache with a given key.
+	Write(ctx context.Context, key []byte, value interface{}) error
+}
+
+// ReadWriter reads from and writes to cache.
+type ReadWriterByte interface {
+	ReaderByte
+	WriterByte
 }
 
 // ReadWriter reads from and writes to cache.
