@@ -28,8 +28,8 @@ type FailoverConfig struct {
 	// UpdateTTL is a time interval to retry update, default 1 minute.
 	UpdateTTL time.Duration
 
-	// BackgroundUpdate enables update in background, default is sync update with updated value served.
-	BackgroundUpdate bool
+	// SyncUpdate disables update in background, default is background update with stale value served.
+	SyncUpdate bool
 
 	// SyncRead enables backend reading in the critical section to ensure cache miss
 	// will not trigger multiple updates sequentially.
@@ -330,7 +330,7 @@ func (sc *Failover) doBuild(
 }
 
 func (sc *Failover) ctxSync(ctx context.Context, err error) (context.Context, bool) {
-	syncUpdate := !sc.config.BackgroundUpdate || err != nil
+	syncUpdate := sc.config.SyncUpdate || err != nil
 	if syncUpdate {
 		return ctx, true
 	}
