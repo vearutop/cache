@@ -42,7 +42,8 @@ func TestFailover_Get_ValueConcurrency(t *testing.T) {
 
 	ctx := context.Background()
 	sc := cache.NewFailover(cache.FailoverConfig{
-		SyncRead: true,
+		BackgroundUpdate: false,
+		SyncRead:         true,
 	})
 
 	var wg sync.WaitGroup
@@ -92,7 +93,7 @@ func TestFailover_Get_ErrorConcurrency(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	sc := cache.NewFailover(cache.FailoverConfig{})
+	sc := cache.NewFailover(cache.FailoverConfig{BackgroundUpdate: false})
 
 	var wg sync.WaitGroup
 
@@ -129,7 +130,8 @@ func TestFailover_Get_FailedUpdateTTL(t *testing.T) {
 
 	c := cache.NewFailover(
 		cache.FailoverConfig{
-			FailedUpdateTTL: -1,
+			BackgroundUpdate: false,
+			FailedUpdateTTL:  -1,
 		})
 
 	val, err := c.Get(ctx, []byte("key"), buildFunc)
@@ -142,7 +144,7 @@ func TestFailover_Get_FailedUpdateTTL(t *testing.T) {
 	assert.Nil(t, val)
 	assert.Equal(t, 2, cnt)
 
-	c = cache.NewFailover(cache.FailoverConfig{})
+	c = cache.NewFailover(cache.FailoverConfig{BackgroundUpdate: false})
 
 	cnt = 0
 	val, err = c.Get(ctx, []byte("key"), buildFunc)
@@ -263,7 +265,8 @@ func TestFailover_Get_SyncUpdate(t *testing.T) {
 	ctx := context.Background()
 	c := cache.NewFailover(
 		cache.FailoverConfig{
-			Logger: ctxd.NoOpLogger{},
+			BackgroundUpdate: false,
+			Logger:           ctxd.NoOpLogger{},
 			BackendConfig: cache.MemoryConfig{
 				TimeToLive: time.Millisecond,
 			},
@@ -310,7 +313,8 @@ func TestFailover_Get_updateErr(t *testing.T) {
 	mc := cache.NewShardedMap()
 
 	c := cache.NewFailover(cache.FailoverConfig{
-		Backend: mc,
+		BackgroundUpdate: false,
+		Backend:          mc,
 	})
 
 	v, err := c.Get(ctx, []byte(key), func(ctx context.Context) (interface{}, error) {
@@ -342,6 +346,7 @@ func TestFailover_Get_mutability(t *testing.T) {
 	s := &stats.TrackerMock{}
 	mc := cache.NewShardedMap()
 	c := cache.NewFailover(cache.FailoverConfig{
+		BackgroundUpdate:  false,
 		Backend:           mc,
 		Stats:             s,
 		ObserveMutability: true,
@@ -386,7 +391,7 @@ func TestFailover_Get_keyLock(t *testing.T) {
 	concurrentCnt := int64(0)
 
 	ctx := context.Background()
-	sc := cache.NewFailover(cache.FailoverConfig{})
+	sc := cache.NewFailover(cache.FailoverConfig{BackgroundUpdate: false})
 
 	// some serious and slow processing may happen here
 	updateFunc := func(_ []byte) interface{} {
@@ -432,9 +437,10 @@ func TestFailover_Get_lowCardinalityKey(t *testing.T) {
 	st := &stats.TrackerMock{}
 	l := ctxd.LoggerMock{}
 	c := cache.NewFailover(cache.FailoverConfig{
-		Stats:    st,
-		SyncRead: true,
-		Logger:   &l,
+		BackgroundUpdate: false,
+		Stats:            st,
+		SyncRead:         true,
+		Logger:           &l,
 	})
 
 	concurrencyLimit := 500
@@ -509,7 +515,8 @@ func TestFailover_Get_lowCardinalityKey(t *testing.T) {
 func TestFailover_Get_staleBlock(t *testing.T) {
 	st := &stats.TrackerMock{}
 	c := cache.NewFailover(cache.FailoverConfig{
-		Stats: st,
+		BackgroundUpdate: false,
+		Stats:            st,
 	})
 	ctx := context.Background()
 
@@ -587,8 +594,9 @@ func TestFailover_Get_staleBlock(t *testing.T) {
 func TestFailover_Get_staleValue(t *testing.T) {
 	st := &stats.TrackerMock{}
 	c := cache.NewFailover(cache.FailoverConfig{
-		Stats:    st,
-		SyncRead: true,
+		BackgroundUpdate: false,
+		Stats:            st,
+		SyncRead:         true,
 	})
 	ctx := context.Background()
 
@@ -673,7 +681,8 @@ func TestFailover_Get_staleValue(t *testing.T) {
 func TestFailover_Get_misses(t *testing.T) {
 	st := &stats.TrackerMock{}
 	c := cache.NewFailover(cache.FailoverConfig{
-		Stats: st,
+		BackgroundUpdate: false,
+		Stats:            st,
 	})
 	ctx := context.Background()
 
@@ -719,7 +728,8 @@ func TestFailover_Get_misses(t *testing.T) {
 
 func TestFailover_Get_alwaysFail(t *testing.T) {
 	c := cache.NewFailover(cache.FailoverConfig{
-		BackendConfig: cache.MemoryConfig{TimeToLive: time.Minute},
+		BackgroundUpdate: false,
+		BackendConfig:    cache.MemoryConfig{TimeToLive: time.Minute},
 	})
 	ctx := context.Background()
 

@@ -11,7 +11,8 @@ import (
 // Benchmark_Failover_noSyncRead-8   	 7716646	       148.8 ns/op	       0 B/op	       0 allocs/op.
 func Benchmark_Failover_noSyncRead(b *testing.B) {
 	c := cache.NewFailover(cache.FailoverConfig{
-		SyncRead: false,
+		BackgroundUpdate: false,
+		SyncRead:         false,
 	})
 	ctx := context.Background()
 
@@ -32,7 +33,8 @@ func Benchmark_Failover_noSyncRead(b *testing.B) {
 // Benchmark_FailoverSyncRead-8   	 3764518	       321.5 ns/op	     113 B/op	       2 allocs/op.
 func Benchmark_FailoverSyncRead(b *testing.B) {
 	c := cache.NewFailover(cache.FailoverConfig{
-		SyncRead: true,
+		BackgroundUpdate: false,
+		SyncRead:         true,
 	})
 	ctx := context.Background()
 
@@ -53,7 +55,7 @@ func Benchmark_FailoverSyncRead(b *testing.B) {
 
 // Benchmark_FailoverAlwaysBuild-8   	  869260	      1573 ns/op	     607 B/op	      15 allocs/op.
 func Benchmark_FailoverAlwaysBuild(b *testing.B) {
-	c := cache.NewFailover(cache.FailoverConfig{})
+	c := cache.NewFailover(cache.FailoverConfig{BackgroundUpdate: false})
 	ctx := context.Background()
 
 	b.ReportAllocs()

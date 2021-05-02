@@ -98,7 +98,7 @@ func (sbm failoverShardedMap) make(b *testing.B, cardinality int) cacheLoader {
 
 	u := cache.NewShardedMap()
 	ctx := context.Background()
-	c := cache.NewFailover(cache.FailoverConfig{Backend: u})
+	c := cache.NewFailover(cache.FailoverConfig{Backend: u, BackgroundUpdate: false})
 	buf := make([]byte, 0)
 
 	for i := 0; i < cardinality; i++ {
