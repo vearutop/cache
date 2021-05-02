@@ -308,10 +308,10 @@ func TestFailover_Get_SyncUpdate(t *testing.T) {
 	ctx := context.Background()
 	c := cache.NewFailover(
 		cache.FailoverConfig{
+			Logger: ctxd.NoOpLogger{},
 			BackendConfig: cache.MemoryConfig{
 				TimeToLive: time.Millisecond,
 			},
-			SyncRead: true,
 		},
 	)
 
@@ -784,7 +784,7 @@ func TestFailover_Get_alwaysFail(t *testing.T) {
 				<-pipeline
 			}()
 
-			v, err := c.Get(ctx, []byte(k), func(ctx context.Context) (interface{}, error) {
+			v, err := c.Get(cache.WithTTL(ctx, time.Minute, false), []byte(k), func(ctx context.Context) (interface{}, error) {
 				return nil, errors.New("failed")
 			})
 			assert.Equal(t, nil, v)
