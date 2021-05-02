@@ -22,7 +22,7 @@ func Benchmark_concurrentRead(b *testing.B) {
 			numRoutines := numRoutines
 
 			for _, loader := range []cacheLoader{
-				failoverShardedByteMap{},
+				failoverShardedMap{},
 			} {
 				loader := loader
 
@@ -88,12 +88,12 @@ type cacheLoader interface {
 	run(b *testing.B, cnt int)
 }
 
-type failoverShardedByteMap struct {
+type failoverShardedMap struct {
 	c           *cache.Failover
 	cardinality int
 }
 
-func (sbm failoverShardedByteMap) make(b *testing.B, cardinality int) cacheLoader {
+func (sbm failoverShardedMap) make(b *testing.B, cardinality int) cacheLoader {
 	b.Helper()
 
 	u := cache.NewShardedMap()
@@ -115,13 +115,13 @@ func (sbm failoverShardedByteMap) make(b *testing.B, cardinality int) cacheLoade
 		}
 	}
 
-	return failoverShardedByteMap{
+	return failoverShardedMap{
 		c:           c,
 		cardinality: cardinality,
 	}
 }
 
-func (sbm failoverShardedByteMap) run(b *testing.B, cnt int) {
+func (sbm failoverShardedMap) run(b *testing.B, cnt int) {
 	b.Helper()
 
 	ctx := context.Background()

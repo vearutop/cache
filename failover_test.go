@@ -17,51 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type makeDataParams struct {
-	country string
-	sku     string
-	week    string
-}
-
-func makeData(params makeDataParams) (map[string]string, error) {
-	if params.country == "country_0" {
-		return nil, errors.New("failed")
-	}
-
-	return map[string]string{
-		"a": params.country,
-		"b": params.sku,
-		"c": params.week,
-	}, nil
-}
-
-func BenchmarkFailover_Get(b *testing.B) {
-	ctx := context.Background()
-
-	sc := cache.NewFailover(cache.FailoverConfig{})
-
-	hit := func(country, sku, week string) (map[string]string, error) {
-		cacheKey := country + ":" + week + ":" + sku
-
-		value, err := sc.Get(ctx, []byte(cacheKey), func(ctx context.Context) (interface{}, error) {
-			return makeData(makeDataParams{country: country, sku: sku, week: week})
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		return value.(map[string]string), nil
-	}
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		si := strconv.Itoa(i % 1000)
-		_, _ = hit("country_"+si, "product_"+si, "week_"+si)
-	}
-}
-
 func TestFailover_Get_ValueConcurrency(t *testing.T) {
 	numKeys := 10 // making 10 distinct keys
 	concurrentCnt := 0
