@@ -69,7 +69,7 @@ jobs:
           export REF_NAME=master
           cd __base
           make | grep bench-run && BENCH_COUNT=5 make bench-run bench-stat || echo "No benchmarks in base"
-          cp bench-master.txt ../bench-master.txt
+          make | grep bench-run && cp bench-master.txt ../bench-master.txt
       - name: Benchmark
         id: bench
         run: |
