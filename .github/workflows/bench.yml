@@ -68,13 +68,13 @@ jobs:
         run: |
           export REF_NAME=master
           cd __base
-          BENCH_COUNT=5 make bench-run bench-stat
+          make | grep bench-run && BENCH_COUNT=5 make bench-run bench-stat || echo "No benchmarks in base"
           cp bench-master.txt ../bench-master.txt
       - name: Benchmark
         id: bench
         run: |
           export REF_NAME=new
-          make | grep bench-run && BENCH_COUNT=5 make bench-run bench-stat || echo "No benchmarks in base"
+          BENCH_COUNT=5 make bench-run bench-stat
           OUTPUT=$(make bench-stat)
           OUTPUT="${OUTPUT//'%'/'%25'}"
           OUTPUT="${OUTPUT//$'\n'/'%0A'}"
