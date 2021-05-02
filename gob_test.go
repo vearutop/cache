@@ -26,18 +26,18 @@ func TestMemory_Dump(t *testing.T) {
 
 	assert.Equal(t, uint64(0xf6c7853229d11f18), cache.GobTypesHash())
 
-	c1 := cache.NewRWMutexMap()
-	c2 := cache.NewRWMutexMap()
+	c1 := cache.NewShardedMap()
+	c2 := cache.NewShardedMap()
 	ctx := context.Background()
 
-	require.NoError(t, c1.Write(ctx, "key1", SomeEntity{
+	require.NoError(t, c1.Write(ctx, []byte("key1"), SomeEntity{
 		SomeField:  "foo",
 		SomeSlice:  []int{1, 2, 3},
 		unexported: "will be lost in transfer",
 	}))
-	require.NoError(t, c1.Write(ctx, "key2", SomeEntity{SomeField: "bar"}))
+	require.NoError(t, c1.Write(ctx, []byte("key2"), SomeEntity{SomeField: "bar"}))
 
-	v, err := c1.Read(ctx, "key1")
+	v, err := c1.Read(ctx, []byte("key1"))
 
 	assert.NoError(t, err)
 	assert.Equal(t, SomeEntity{
@@ -57,7 +57,7 @@ func TestMemory_Dump(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, n)
 
-	v, err = c2.Read(ctx, "key1")
+	v, err = c2.Read(ctx, []byte("key1"))
 
 	assert.NoError(t, err)
 	assert.Equal(t, SomeEntity{SomeField: "foo", SomeSlice: []int{1, 2, 3}}, v)
@@ -66,14 +66,14 @@ func TestMemory_Dump(t *testing.T) {
 func BenchmarkMemory_Dump(b *testing.B) {
 	cache.GobRegister(SomeEntity{})
 
-	c1 := cache.NewRWMutexMap()
-	c2 := cache.NewRWMutexMap()
+	c1 := cache.NewShardedMap()
+	c2 := cache.NewShardedMap()
 	ctx := context.Background()
 
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		err := c1.Write(ctx, "key"+strconv.Itoa(i), SomeEntity{SomeField: "foo"})
+		err := c1.Write(ctx, []byte("key"+strconv.Itoa(i)), SomeEntity{SomeField: "foo"})
 		if err != nil {
 			assert.NoError(b, err)
 

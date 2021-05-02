@@ -10,8 +10,10 @@ const (
 	// ErrCacheItemNotFound indicates missing cache entry.
 	ErrCacheItemNotFound = SentinelError("missing cache item")
 
+	// ErrNothingToInvalidate indicates no caches were added to Invalidator.
 	ErrNothingToInvalidate = SentinelError("nothing to invalidate")
 
+	// ErrAlreadyInvalidated indicates recent invalidation.
 	ErrAlreadyInvalidated = SentinelError("already invalidated")
 )
 

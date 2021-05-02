@@ -43,7 +43,7 @@ func BenchmarkFailover_Get(b *testing.B) {
 	hit := func(country, sku, week string) (map[string]string, error) {
 		cacheKey := country + ":" + week + ":" + sku
 
-		value, err := sc.Get(ctx, cacheKey, func(ctx context.Context) (interface{}, error) {
+		value, err := sc.Get(ctx, []byte(cacheKey), func(ctx context.Context) (interface{}, error) {
 			return makeData(makeDataParams{country: country, sku: sku, week: week})
 		})
 		if err != nil {
@@ -58,57 +58,6 @@ func BenchmarkFailover_Get(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		si := strconv.Itoa(i % 1000)
-		// No need to check error in benchmark
-		// nolint
-		_, _ = hit("country_"+si, "product_"+si, "week_"+si)
-	}
-}
-
-func BenchmarkMemory_Read(b *testing.B) {
-	ctx := context.Background()
-	c := cache.NewRWMutexMap()
-
-	hit := func(country, sku, week string) (map[string]string, error) {
-		cacheKey := country + ":" + week + ":" + sku
-
-		value, err := c.Read(ctx, cacheKey)
-		if err != nil {
-			if err == cache.ErrExpiredCacheItem && value != nil { // nolint:errorlint // Expecting unwrapped error.
-				writeErr := c.Write(ctx, cacheKey, value)
-				if writeErr != nil {
-					return nil, writeErr
-				}
-			}
-
-			list, err := makeData(makeDataParams{country: country, sku: sku, week: week})
-			if err != nil {
-				// return stale value on cache update failure
-				// after staleUpdateInterval cache will expire again and update retry will happen on read
-				if value != nil {
-					return value.(map[string]string), nil
-				}
-
-				return nil, err
-			}
-
-			writeErr := c.Write(ctx, cacheKey, list)
-			if writeErr != nil {
-				return nil, writeErr
-			}
-
-			return list, nil
-		}
-
-		return value.(map[string]string), nil
-	}
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		si := strconv.Itoa(i % 1000)
-		// No need to check error in benchmark
-		// nolint
 		_, _ = hit("country_"+si, "product_"+si, "week_"+si)
 	}
 }
@@ -152,7 +101,7 @@ func TestFailover_Get_ValueConcurrency(t *testing.T) {
 			defer wg.Done()
 
 			key := "key" + k
-			val, err := sc.Get(ctx, key, func(ctx context.Context) (interface{}, error) {
+			val, err := sc.Get(ctx, []byte(key), func(ctx context.Context) (interface{}, error) {
 				return updateFunc(key), nil
 			})
 
@@ -201,7 +150,7 @@ func TestFailover_Get_ErrorConcurrency(t *testing.T) {
 			defer wg.Done()
 
 			key := "key" + k
-			val, err := sc.Get(ctx, key, func(ctx context.Context) (interface{}, error) {
+			val, err := sc.Get(ctx, []byte(key), func(ctx context.Context) (interface{}, error) {
 				return nil, failFunc(key)
 			})
 
@@ -228,12 +177,12 @@ func TestFailover_Get_FailedUpdateTTL(t *testing.T) {
 			FailedUpdateTTL: -1,
 		})
 
-	val, err := c.Get(ctx, "key", buildFunc)
+	val, err := c.Get(ctx, []byte("key"), buildFunc)
 	assert.Error(t, err)
 	assert.Nil(t, val)
 	assert.Equal(t, 1, cnt)
 
-	val, err = c.Get(ctx, "key", buildFunc)
+	val, err = c.Get(ctx, []byte("key"), buildFunc)
 	assert.Error(t, err)
 	assert.Nil(t, val)
 	assert.Equal(t, 2, cnt)
@@ -241,17 +190,17 @@ func TestFailover_Get_FailedUpdateTTL(t *testing.T) {
 	c = cache.NewFailover(cache.FailoverConfig{})
 
 	cnt = 0
-	val, err = c.Get(ctx, "key", buildFunc)
+	val, err = c.Get(ctx, []byte("key"), buildFunc)
 	assert.Error(t, err)
 	assert.Nil(t, val)
 	assert.Equal(t, 1, cnt)
 
-	val, err = c.Get(ctx, "key", buildFunc)
+	val, err = c.Get(ctx, []byte("key"), buildFunc)
 	assert.Error(t, err)
 	assert.Nil(t, val)
 	assert.Equal(t, 1, cnt)
 
-	val, err = c.Get(ctx, "key", buildFunc)
+	val, err = c.Get(ctx, []byte("key"), buildFunc)
 	assert.Error(t, err)
 	assert.Nil(t, val)
 	assert.Equal(t, 1, cnt)
@@ -265,13 +214,13 @@ func TestFailover_Get_BackgroundUpdate(t *testing.T) {
 		cache.FailoverConfig{
 			Logger:           logger,
 			BackgroundUpdate: true,
-			UpstreamConfig: cache.MemoryConfig{
+			BackendConfig: cache.MemoryConfig{
 				TimeToLive: time.Millisecond,
 			},
 		},
 	)
 
-	val, err := c.Get(ctx, "key", func(ctx context.Context) (i interface{}, e error) {
+	val, err := c.Get(ctx, []byte("key"), func(ctx context.Context) (i interface{}, e error) {
 		atomic.AddInt64(&cnt, 1)
 
 		return "first value", nil
@@ -281,7 +230,7 @@ func TestFailover_Get_BackgroundUpdate(t *testing.T) {
 	assert.Equal(t, int64(1), atomic.LoadInt64(&cnt))
 	time.Sleep(time.Millisecond)
 
-	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), "key", func(ctx context.Context) (i interface{}, e error) {
+	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), []byte("key"), func(ctx context.Context) (i interface{}, e error) {
 		time.Sleep(time.Millisecond)
 		atomic.AddInt64(&cnt, 1)
 
@@ -294,7 +243,7 @@ func TestFailover_Get_BackgroundUpdate(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// Should not call buildFunc here.
-	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), "key", func(ctx context.Context) (i interface{}, e error) {
+	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), []byte("key"), func(ctx context.Context) (i interface{}, e error) {
 		atomic.AddInt64(&cnt, 1)
 		assert.Fail(t, "should not be here")
 
@@ -314,13 +263,13 @@ func TestFailover_Get_BackgroundUpdateMaxExpiration(t *testing.T) {
 			Logger:           logger,
 			MaxExpiration:    time.Nanosecond,
 			BackgroundUpdate: true,
-			UpstreamConfig: cache.MemoryConfig{
+			BackendConfig: cache.MemoryConfig{
 				TimeToLive: time.Millisecond,
 			},
 		},
 	)
 
-	val, err := c.Get(ctx, "key", func(ctx context.Context) (i interface{}, e error) {
+	val, err := c.Get(ctx, []byte("key"), func(ctx context.Context) (i interface{}, e error) {
 		atomic.AddInt64(&cnt, 1)
 
 		return "first value", nil
@@ -330,7 +279,7 @@ func TestFailover_Get_BackgroundUpdateMaxExpiration(t *testing.T) {
 	assert.Equal(t, int64(1), atomic.LoadInt64(&cnt))
 	time.Sleep(time.Millisecond)
 
-	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), "key", func(ctx context.Context) (i interface{}, e error) {
+	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), []byte("key"), func(ctx context.Context) (i interface{}, e error) {
 		time.Sleep(time.Millisecond)
 		atomic.AddInt64(&cnt, 1)
 
@@ -343,7 +292,7 @@ func TestFailover_Get_BackgroundUpdateMaxExpiration(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// Should not call buildFunc here.
-	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), "key", func(ctx context.Context) (i interface{}, e error) {
+	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), []byte("key"), func(ctx context.Context) (i interface{}, e error) {
 		atomic.AddInt64(&cnt, 1)
 		assert.Fail(t, "should not be here")
 
@@ -359,14 +308,14 @@ func TestFailover_Get_SyncUpdate(t *testing.T) {
 	ctx := context.Background()
 	c := cache.NewFailover(
 		cache.FailoverConfig{
-			UpstreamConfig: cache.MemoryConfig{
+			BackendConfig: cache.MemoryConfig{
 				TimeToLive: time.Millisecond,
 			},
 			SyncRead: true,
 		},
 	)
 
-	val, err := c.Get(ctx, "key", func(ctx context.Context) (i interface{}, e error) {
+	val, err := c.Get(ctx, []byte("key"), func(ctx context.Context) (i interface{}, e error) {
 		atomic.AddInt64(&cnt, 1)
 
 		return "first value", nil
@@ -376,7 +325,7 @@ func TestFailover_Get_SyncUpdate(t *testing.T) {
 	assert.Equal(t, int64(1), atomic.LoadInt64(&cnt))
 	time.Sleep(5 * time.Millisecond)
 
-	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), "key", func(ctx context.Context) (i interface{}, e error) {
+	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), []byte("key"), func(ctx context.Context) (i interface{}, e error) {
 		atomic.AddInt64(&cnt, 1)
 
 		return "second value", nil
@@ -388,7 +337,7 @@ func TestFailover_Get_SyncUpdate(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// Should not call buildFunc here.
-	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), "key", func(ctx context.Context) (i interface{}, e error) {
+	val, err = c.Get(cache.WithTTL(ctx, time.Minute, false), []byte("key"), func(ctx context.Context) (i interface{}, e error) {
 		atomic.AddInt64(&cnt, 1)
 		assert.Fail(t, "should not be here")
 
@@ -403,13 +352,13 @@ func TestFailover_Get_updateErr(t *testing.T) {
 	ctx := context.Background()
 	key := "some-key"
 
-	mc := cache.NewRWMutexMap()
+	mc := cache.NewShardedMap()
 
 	c := cache.NewFailover(cache.FailoverConfig{
-		Upstream: mc,
+		Backend: mc,
 	})
 
-	v, err := c.Get(ctx, key, func(ctx context.Context) (interface{}, error) {
+	v, err := c.Get(ctx, []byte(key), func(ctx context.Context) (interface{}, error) {
 		return 123, nil
 	})
 	assert.NoError(t, err)
@@ -417,7 +366,7 @@ func TestFailover_Get_updateErr(t *testing.T) {
 
 	mc.ExpireAll()
 
-	v, err = c.Get(ctx, key, func(ctx context.Context) (interface{}, error) {
+	v, err = c.Get(ctx, []byte(key), func(ctx context.Context) (interface{}, error) {
 		return nil, errors.New("failed")
 	})
 
@@ -425,7 +374,7 @@ func TestFailover_Get_updateErr(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 123, v)
 
-	v, err = c.Get(ctx, key, func(ctx context.Context) (interface{}, error) {
+	v, err = c.Get(ctx, []byte(key), func(ctx context.Context) (interface{}, error) {
 		return nil, errors.New("failed")
 	})
 
@@ -436,16 +385,16 @@ func TestFailover_Get_updateErr(t *testing.T) {
 
 func TestFailover_Get_mutability(t *testing.T) {
 	s := &stats.TrackerMock{}
-	mc := cache.NewRWMutexMap()
+	mc := cache.NewShardedMap()
 	c := cache.NewFailover(cache.FailoverConfig{
-		Upstream:          mc,
+		Backend:           mc,
 		Stats:             s,
 		ObserveMutability: true,
 	})
 	ctx := context.TODO()
 
 	// First value served.
-	_, err := c.Get(ctx, "key", func(ctx context.Context) (interface{}, error) {
+	_, err := c.Get(ctx, []byte("key"), func(ctx context.Context) (interface{}, error) {
 		return 123, nil
 	})
 	assert.NoError(t, err)
@@ -456,7 +405,7 @@ func TestFailover_Get_mutability(t *testing.T) {
 	assert.Equal(t, 0, s.Int(cache.MetricChanged))
 
 	// Second value served equal to first, no change.
-	_, err = c.Get(ctx, "key", func(ctx context.Context) (interface{}, error) {
+	_, err = c.Get(ctx, []byte("key"), func(ctx context.Context) (interface{}, error) {
 		return 123, nil
 	})
 	assert.NoError(t, err)
@@ -467,7 +416,7 @@ func TestFailover_Get_mutability(t *testing.T) {
 	assert.Equal(t, 0, s.Int(cache.MetricChanged))
 
 	// Third value served not equal to second, change counted.
-	_, err = c.Get(ctx, "key", func(ctx context.Context) (interface{}, error) {
+	_, err = c.Get(ctx, []byte("key"), func(ctx context.Context) (interface{}, error) {
 		return 321, nil
 	})
 	assert.NoError(t, err)
@@ -485,7 +434,7 @@ func TestFailover_Get_keyLock(t *testing.T) {
 	sc := cache.NewFailover(cache.FailoverConfig{})
 
 	// some serious and slow processing may happen here
-	updateFunc := func(_ string) interface{} {
+	updateFunc := func(_ []byte) interface{} {
 		cnt := atomic.AddInt64(&concurrentCnt, 1)
 		assert.Equal(t, int64(1), cnt, "must not have running concurrency")
 		time.Sleep(time.Millisecond)
@@ -496,7 +445,7 @@ func TestFailover_Get_keyLock(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	key := "key"
+	key := []byte("key")
 
 	for i := 0; i < 1000; i++ {
 		wg.Add(1)
@@ -569,7 +518,7 @@ func TestFailover_Get_lowCardinalityKey(t *testing.T) {
 
 			atomic.AddInt64(&seq, 1)
 			ctx := ctxd.AddFields(ctxs[k], "tx", atomic.LoadInt64(&seq))
-			v, err := c.Get(cache.WithTTL(ctx, time.Minute, false), k, func(ctx context.Context) (interface{}, error) {
+			v, err := c.Get(cache.WithTTL(ctx, time.Minute, false), []byte(k), func(ctx context.Context) (interface{}, error) {
 				time.Sleep(10 * time.Microsecond)
 
 				return 123, nil
@@ -615,7 +564,7 @@ func TestFailover_Get_staleBlock(t *testing.T) {
 	// Distinct key for every chunk.
 	k := "oneone"
 
-	v, err := c.Get(cache.WithTTL(ctx, time.Nanosecond, false), k, func(ctx context.Context) (interface{}, error) {
+	v, err := c.Get(cache.WithTTL(ctx, time.Nanosecond, false), []byte(k), func(ctx context.Context) (interface{}, error) {
 		return 123, nil
 	})
 	assert.Equal(t, 123, v)
@@ -641,7 +590,7 @@ func TestFailover_Get_staleBlock(t *testing.T) {
 				<-pipeline
 			}()
 
-			v, err := c.Get(cache.WithTTL(ctx, time.Minute, false), k, func(ctx context.Context) (interface{}, error) {
+			v, err := c.Get(cache.WithTTL(ctx, time.Minute, false), []byte(k), func(ctx context.Context) (interface{}, error) {
 				<-blockUpdate
 
 				return 123, nil
@@ -701,7 +650,7 @@ func TestFailover_Get_staleValue(t *testing.T) {
 		k := "oneone" + strconv.Itoa(i)
 
 		// Storing expired values.
-		v, err := c.Get(cache.WithTTL(ctx, cache.SkipWriteTTL, false), k, func(ctx context.Context) (interface{}, error) {
+		v, err := c.Get(cache.WithTTL(ctx, cache.SkipWriteTTL, false), []byte(k), func(ctx context.Context) (interface{}, error) {
 			return 123, nil
 		})
 
@@ -729,7 +678,7 @@ func TestFailover_Get_staleValue(t *testing.T) {
 				<-pipeline
 			}()
 
-			v, err := c.Get(cache.WithTTL(ctx, time.Hour, false), k, func(ctx context.Context) (interface{}, error) {
+			v, err := c.Get(cache.WithTTL(ctx, time.Hour, false), []byte(k), func(ctx context.Context) (interface{}, error) {
 				time.Sleep(10 * time.Millisecond)
 
 				return 123, nil
@@ -789,7 +738,7 @@ func TestFailover_Get_misses(t *testing.T) {
 				<-pipeline
 			}()
 
-			v, err := c.Get(cache.WithTTL(ctx, time.Nanosecond, false), k, func(ctx context.Context) (interface{}, error) {
+			v, err := c.Get(cache.WithTTL(ctx, time.Nanosecond, false), []byte(k), func(ctx context.Context) (interface{}, error) {
 				return 123, nil
 			})
 			assert.Equal(t, 123, v)
@@ -808,14 +757,14 @@ func TestFailover_Get_misses(t *testing.T) {
 	assert.Equal(t, expectedWrites, st.Int(cache.MetricBuild))
 
 	// Every new value has 2 misses:
-	//   initial miss in upstream,
+	//   initial miss in backend,
 	//   missing cached build error.
 	assert.Equal(t, 2*n, st.Int(cache.MetricMiss))
 }
 
 func TestFailover_Get_alwaysFail(t *testing.T) {
 	c := cache.NewFailover(cache.FailoverConfig{
-		UpstreamConfig: cache.MemoryConfig{TimeToLive: time.Minute},
+		BackendConfig: cache.MemoryConfig{TimeToLive: time.Minute},
 	})
 	ctx := context.Background()
 
@@ -835,7 +784,7 @@ func TestFailover_Get_alwaysFail(t *testing.T) {
 				<-pipeline
 			}()
 
-			v, err := c.Get(ctx, k, func(ctx context.Context) (interface{}, error) {
+			v, err := c.Get(ctx, []byte(k), func(ctx context.Context) (interface{}, error) {
 				return nil, errors.New("failed")
 			})
 			assert.Equal(t, nil, v)

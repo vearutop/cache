@@ -50,7 +50,7 @@ func (s Cached) GetByID(ctx context.Context, country string, id int) (Value, err
 	// Build function will be called if there is a cache miss.
 	cacheKey := country + ":" + strconv.Itoa(id)
 
-	value, err := s.storage.Get(ctx, cacheKey, func(ctx context.Context) (interface{}, error) {
+	value, err := s.storage.Get(ctx, []byte(cacheKey), func(ctx context.Context) (interface{}, error) {
 		return s.upstream.GetByID(ctx, country, id)
 	})
 	if err != nil {
@@ -69,13 +69,13 @@ func ExampleFailover_Get() {
 	service = Cached{
 		upstream: &Real{},
 		storage: cache.NewFailover(cache.FailoverConfig{
-			UpstreamConfig: cache.MemoryConfig{TimeToLive: time.Minute},
+			BackendConfig: cache.MemoryConfig{TimeToLive: time.Minute},
 		}),
 	}
 
 	fmt.Println(service.GetByID(ctx, "DE", 123))
 	fmt.Println(service.GetByID(ctx, "US", 0)) // Error increased sequence, but was cached with short-ttl.
-	fmt.Println(service.GetByID(ctx, "US", 0)) // This call did not hit upstream.
+	fmt.Println(service.GetByID(ctx, "US", 0)) // This call did not hit backend.
 	fmt.Println(service.GetByID(ctx, "US", 456))
 	fmt.Println(service.GetByID(ctx, "DE", 123))
 	fmt.Println(service.GetByID(ctx, "US", 456))

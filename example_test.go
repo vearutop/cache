@@ -10,9 +10,9 @@ import (
 	"github.com/bool64/stats"
 )
 
-func ExampleNewRWMutexMap() {
+func ExampleNewShardedMap() {
 	// Create cache instance.
-	c := cache.NewRWMutexMap(cache.MemoryConfig{
+	c := cache.NewShardedMap(cache.MemoryConfig{
 		Name:       "dogs",
 		TimeToLive: 13 * time.Minute,
 		Logger:     &ctxd.LoggerMock{},
@@ -30,10 +30,10 @@ func ExampleNewRWMutexMap() {
 	ctx := context.TODO()
 
 	// Write value to cache.
-	_ = c.Write(ctx, "my-key", []int{1, 2, 3})
+	_ = c.Write(ctx, []byte("my-key"), []int{1, 2, 3})
 
 	// Read value from cache.
-	val, _ := c.Read(ctx, "my-key")
+	val, _ := c.Read(ctx, []byte("my-key"))
 	fmt.Printf("%v", val)
 
 	// Output:

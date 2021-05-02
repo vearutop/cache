@@ -7,12 +7,11 @@
 //  - No external dependencies.
 //  - Separated expiration and cleaner allows usage of stale values to protect from upstream errors and racy updates.
 //  - Background cleaner does not affect sync performance.
-//  - Upstream errors are cached with low TTL to avoid flooding unhealthy upstream.
+//  - Build errors are cached with low TTL to avoid flooding unhealthy upstream.
 //  - Background update of expired cache value improves performance.
 //  - Cache updates are locked per key to eliminate racy updates and only update once.
 //  - Allows logging, stats collection.
-//  - Propagates context to allow better control of upstream and application components.
+//  - Propagates context to allow better control of backend and application components.
 //  - Allows mass expiration and removal (drop cache).
 //  - Expiration jitter to avoid massive synchronized expiration.
-//  - Warm cache with background value watcher.
 package cache

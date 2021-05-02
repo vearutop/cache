@@ -16,32 +16,19 @@ const SkipWriteTTL = time.Duration(-1)
 type Reader interface {
 	// Read returns cached value and/or error.
 	// if ErrExpiredCacheItem is returned, expired cache value must be returned as well.
-	Read(ctx context.Context, key string) (interface{}, error)
+	Read(ctx context.Context, key []byte) (interface{}, error)
 }
 
 // Writer writes to cache.
 type Writer interface {
 	// Write stores value in cache with a given key.
-	Write(ctx context.Context, key string, value interface{}) error
-}
-
-// Reader reads from cache.
-type ReaderByte interface {
-	// Read returns cached value and/or error.
-	// if ErrExpiredCacheItem is returned, expired cache value must be returned as well.
-	Read(ctx context.Context, key []byte) (interface{}, error)
-}
-
-// Writer writes to cache.
-type WriterByte interface {
-	// Write stores value in cache with a given key.
 	Write(ctx context.Context, key []byte, value interface{}) error
 }
 
-// ReadWriter reads from and writes to cache.
-type ReadWriterByte interface {
-	ReaderByte
-	WriterByte
+// Deleter deletes from cache.
+type Deleter interface {
+	// Delete removes a cache entry with a given key.
+	Delete(ctx context.Context, key []byte) error
 }
 
 // ReadWriter reads from and writes to cache.
@@ -50,10 +37,13 @@ type ReadWriter interface {
 	Writer
 }
 
+// Entry is cache entry with key and value.
 type Entry interface {
+	Key() []byte
 	Value() interface{}
 }
 
+// Expirable exposes expiration time.
 type Expirable interface {
 	ExpireAt() time.Time
 }

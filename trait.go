@@ -77,7 +77,7 @@ func (c *trait) prepareRead(ctx context.Context, cacheEntry entry, found bool) (
 		return nil, ErrCacheItemNotFound
 	}
 
-	if cacheEntry.Exp.Before(time.Now()) {
+	if cacheEntry.E.Before(time.Now()) {
 		if c.log != nil {
 			c.config.Logger.Debug(ctx, "cache key expired", "name", c.config.Name)
 		}
@@ -86,7 +86,7 @@ func (c *trait) prepareRead(ctx context.Context, cacheEntry entry, found bool) (
 			c.stat.Add(ctx, MetricExpired, 1, "name", c.config.Name)
 		}
 
-		return cacheEntry.Val, errExpired{entry: cacheEntry}
+		return cacheEntry.V, errExpired{entry: cacheEntry}
 	}
 
 	if c.stat != nil {
@@ -100,7 +100,7 @@ func (c *trait) prepareRead(ctx context.Context, cacheEntry entry, found bool) (
 		)
 	}
 
-	return cacheEntry.Val, nil
+	return cacheEntry.V, nil
 }
 
 func (c *trait) reportItemsCount(b backend) {
@@ -126,9 +126,11 @@ func (c *trait) reportItemsCount(b backend) {
 				c.log.Debug(context.Background(), "exiting cache items counter goroutine",
 					"name", c.config.Name)
 			}
+
 			if c.stat != nil {
 				c.stat.Set(context.Background(), MetricItems, float64(b.Len()), "name", c.config.Name)
 			}
+
 			return
 		}
 	}
@@ -147,6 +149,7 @@ func (c *trait) cleaner(b backend) {
 				c.log.Debug(context.Background(), "exiting expired cache cleaner",
 					"name", c.config.Name)
 			}
+
 			return
 		}
 	}
@@ -192,16 +195,21 @@ type MemoryConfig struct {
 
 // entry is a cache entry.
 type entry struct {
-	Val interface{}
-	Exp time.Time
+	K []byte
+	V interface{}
+	E time.Time
+}
+
+func (e entry) Key() []byte {
+	return e.K
 }
 
 func (e entry) Value() interface{} {
-	return e.Val
+	return e.V
 }
 
 func (e entry) ExpireAt() time.Time {
-	return e.Exp
+	return e.E
 }
 
 type errExpired struct {
@@ -213,13 +221,13 @@ func (e errExpired) Error() string {
 }
 
 func (e errExpired) Value() interface{} {
-	return e.entry.Val
+	return e.entry.V
 }
 
 func (e errExpired) ExpiredAt() time.Time {
-	return e.entry.Exp
+	return e.entry.E
 }
 
 func (e errExpired) Is(err error) bool {
-	return err == ErrExpiredCacheItem
+	return err == ErrExpiredCacheItem // nolint:errorlint,goerr113  // Target sentinel error is not wrapped.
 }

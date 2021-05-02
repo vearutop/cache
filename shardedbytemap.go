@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"bytes"
 	"context"
 	"math/rand"
 	"runtime"
@@ -10,31 +11,34 @@ import (
 	"github.com/cespare/xxhash/v2"
 )
 
-// var _ ReadWriter = &ShardedByteMap{}
+var (
+	_ ReadWriter = &shardedMap{}
+	_ Deleter    = &shardedMap{}
+)
 
-// const shards = 64
+const shards = 128
 
 type hashedBucket struct {
 	sync.RWMutex
 	data map[uint64]entry
 }
 
-type ShardedByteMap struct {
-	*shardedByteMap
+// ShardedMap is an in-memory cache backend.
+type ShardedMap struct {
+	*shardedMap
 }
 
-// ShardedByteMap is an in-ShardedByteMap cache.
-type shardedByteMap struct {
-	hashedBuckets [64]hashedBucket
+type shardedMap struct {
+	hashedBuckets [shards]hashedBucket
 
 	*trait
 }
 
-// NewShardedByteMap creates an instance of in-ShardedByteMap cache with optional configuration.
-func NewShardedByteMap(cfg ...MemoryConfig) *ShardedByteMap {
-	c := &shardedByteMap{}
-	C := &ShardedByteMap{
-		shardedByteMap: c,
+// NewShardedMap creates an instance of in-memory cache with optional configuration.
+func NewShardedMap(cfg ...MemoryConfig) *ShardedMap {
+	c := &shardedMap{}
+	C := &ShardedMap{
+		shardedMap: c,
 	}
 
 	for i := 0; i < shards; i++ {
@@ -43,7 +47,7 @@ func NewShardedByteMap(cfg ...MemoryConfig) *ShardedByteMap {
 
 	c.trait = newTrait(C, cfg...)
 
-	runtime.SetFinalizer(C, func(m *ShardedByteMap) {
+	runtime.SetFinalizer(C, func(m *ShardedMap) {
 		close(c.closed)
 	})
 
@@ -51,12 +55,12 @@ func NewShardedByteMap(cfg ...MemoryConfig) *ShardedByteMap {
 }
 
 // Read gets value.
-func (c *ShardedByteMap) Read(ctx context.Context, sharkey []byte) (interface{}, error) {
+func (c *shardedMap) Read(ctx context.Context, key []byte) (interface{}, error) {
 	if SkipRead(ctx) {
 		return nil, ErrCacheItemNotFound
 	}
 
-	h := xxhash.Sum64(sharkey)
+	h := xxhash.Sum64(key)
 	b := &c.hashedBuckets[h%shards]
 	b.RLock()
 	cacheEntry, found := b.data[h]
@@ -66,7 +70,7 @@ func (c *ShardedByteMap) Read(ctx context.Context, sharkey []byte) (interface{},
 }
 
 // Write sets value.
-func (c *ShardedByteMap) Write(ctx context.Context, k []byte, v interface{}) error {
+func (c *shardedMap) Write(ctx context.Context, k []byte, v interface{}) error {
 	h := xxhash.Sum64(k)
 	b := &c.hashedBuckets[h%shards]
 	b.Lock()
@@ -79,13 +83,17 @@ func (c *ShardedByteMap) Write(ctx context.Context, k []byte, v interface{}) err
 	}
 
 	if c.config.ExpirationJitter > 0 {
-		ttl += time.Duration(float64(ttl) * c.config.ExpirationJitter * (rand.Float64() - 0.5))
+		ttl += time.Duration(float64(ttl) * c.config.ExpirationJitter * (rand.Float64() - 0.5)) // nolint:gosec
 	}
 
-	b.data[h] = entry{Val: v, Exp: time.Now().Add(ttl)}
+	// Copy key to allow mutations of original argument.
+	key := make([]byte, len(k))
+	copy(key, k)
+
+	b.data[h] = entry{V: v, K: key, E: time.Now().Add(ttl)}
 
 	if c.log != nil {
-		c.log.Debug(ctx, "wrote to cache", "name", c.config.Name, "key", k, "value", v, "ttl", ttl)
+		c.log.Debug(ctx, "wrote to cache", "name", c.config.Name, "key", key, "value", v, "ttl", ttl)
 	}
 
 	if c.stat != nil {
@@ -95,85 +103,103 @@ func (c *ShardedByteMap) Write(ctx context.Context, k []byte, v interface{}) err
 	return nil
 }
 
-// ExpireAll marks all entries as expired, they can still serve stale cache.
-func (c *ShardedByteMap) ExpireAll() {
-	// now := time.Now()
+func (c *shardedMap) Delete(ctx context.Context, key []byte) error {
+	h := xxhash.Sum64(key)
+	b := &c.hashedBuckets[h%shards]
 
-	//c.Lock()
-	//for k, v := range c.data {
-	//	v.Exp = now
-	//	c.data[k] = v
-	//}
-	//c.Unlock()
+	b.Lock()
+	defer b.Unlock()
+
+	cachedEntry, found := b.data[h]
+	if !found || !bytes.Equal(cachedEntry.K, key) {
+		return ErrCacheItemNotFound
+	}
+
+	delete(b.data, h)
+
+	return nil
+}
+
+// ExpireAll marks all entries as expired, they can still serve stale cache.
+func (c *shardedMap) ExpireAll() {
+	now := time.Now()
+
+	for i := range c.hashedBuckets {
+		b := &c.hashedBuckets[i]
+		b.Lock()
+		for h, v := range b.data {
+			v.E = now
+			b.data[h] = v
+		}
+		b.Unlock()
+	}
 }
 
 // RemoveAll deletes all entries.
-func (c *ShardedByteMap) RemoveAll() {
-	// c.Lock()
-	// c.data = make(map[string]entry)
-	// c.Unlock()
+func (c *shardedMap) RemoveAll() {
+	for i := range c.hashedBuckets {
+		b := &c.hashedBuckets[i]
+
+		b.Lock()
+		for h := range c.hashedBuckets[i].data {
+			delete(b.data, h)
+		}
+		b.Unlock()
+	}
 }
 
-func (c *ShardedByteMap) clearExpiredBefore(expirationBoundary time.Time) {
-	//keys := make([]string, 0, 100)
-	//
-	//c.RLock()
-	//for k, i := range c.data {
-	//	if i.Exp.Before(expirationBoundary) {
-	//		keys = append(keys, k)
-	//	}
-	//}
-	//c.RUnlock()
-	//
-	//if c.log != nil {
-	//	c.log.Debug(context.Background(), "clearing expired cache items",
-	//		"name", c.config.Name,
-	//		"items", keys,
-	//	)
-	//}
-	//
-	//c.Lock()
-	//for _, k := range keys {
-	//	delete(c.data, k)
-	//}
-	//c.Unlock()
+func (c *shardedMap) clearExpiredBefore(expirationBoundary time.Time) {
+	for i := range c.hashedBuckets {
+		b := &c.hashedBuckets[i]
 
-	// c.evictHeapInUse()
+		b.Lock()
+		for h, v := range b.data {
+			if v.E.Before(expirationBoundary) {
+				delete(b.data, h)
+			}
+		}
+		b.Unlock()
+	}
+
+	c.evictHeapInUse()
 }
 
 // Len returns number of elements in cache.
-func (c *ShardedByteMap) Len() int {
-	//c.RLock()
-	//cnt := len(c.data)
-	//c.RUnlock()
-	//
-	//return cnt
+func (c *shardedMap) Len() int {
+	cnt := 0
 
-	return 0
+	for i := range c.hashedBuckets {
+		b := &c.hashedBuckets[i]
+
+		b.RLock()
+		cnt += len(b.data)
+		b.RUnlock()
+	}
+
+	return cnt
 }
 
 // Walk walks cached entries.
-func (c *ShardedByteMap) Walk(walkFn func(key string, value Entry) error) (int, error) {
-	//c.RLock()
-	//defer c.RUnlock()
-	//
-	//n := 0
-	//
-	//for k, v := range c.data {
-	//	c.RUnlock()
-	//
-	//	err := walkFn(k, v)
-	//
-	//	c.RLock()
-	//
-	//	if err != nil {
-	//		return n, err
-	//	}
-	//
-	//	n++
-	//}
-	//
-	//return n, nil
+func (c *shardedMap) Walk(walkFn func(e Entry) error) (int, error) {
+	n := 0
 
-	return 0, nil
+	for i := range c.hashedBuckets {
+		b := &c.hashedBuckets[i]
+		b.RLock()
+		for _, v := range c.hashedBuckets[i].data {
+			b.RUnlock()
+
+			err := walkFn(v)
+			if err != nil {
+				return n, err
+			}
+
+			n++
+
+			b.RLock()
+		}
+		b.RUnlock()
+	}
+
+	return n, nil
 }
