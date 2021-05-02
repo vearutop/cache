@@ -74,7 +74,7 @@ jobs:
         id: bench
         run: |
           export REF_NAME=new
-          BENCH_COUNT=5 make bench-run bench-stat
+          make | grep bench-run && BENCH_COUNT=5 make bench-run bench-stat || echo "No benchmarks in base"
           OUTPUT=$(make bench-stat)
           OUTPUT="${OUTPUT//'%'/'%25'}"
           OUTPUT="${OUTPUT//$'\n'/'%0A'}"
