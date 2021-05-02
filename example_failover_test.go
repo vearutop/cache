@@ -69,7 +69,6 @@ func ExampleFailover_Get() {
 	service = Cached{
 		upstream: &Real{},
 		storage: cache.NewFailover(cache.FailoverConfig{
-			SyncUpdate:    true,
 			BackendConfig: cache.MemoryConfig{TimeToLive: time.Minute},
 		}),
 	}

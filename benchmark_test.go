@@ -11,8 +11,7 @@ import (
 // Benchmark_Failover_noSyncRead-8   	 7716646	       148.8 ns/op	       0 B/op	       0 allocs/op.
 func Benchmark_Failover_noSyncRead(b *testing.B) {
 	c := cache.NewFailover(cache.FailoverConfig{
-		SyncUpdate: true,
-		SyncRead:   false,
+		SyncRead: false,
 	})
 	ctx := context.Background()
 
@@ -33,8 +32,7 @@ func Benchmark_Failover_noSyncRead(b *testing.B) {
 // Benchmark_FailoverSyncRead-8   	 3764518	       321.5 ns/op	     113 B/op	       2 allocs/op.
 func Benchmark_FailoverSyncRead(b *testing.B) {
 	c := cache.NewFailover(cache.FailoverConfig{
-		SyncUpdate: true,
-		SyncRead:   true,
+		SyncRead: true,
 	})
 	ctx := context.Background()
 
@@ -67,7 +65,7 @@ func Benchmark_FailoverAlwaysBuild(b *testing.B) {
 		k = append(k[:0], []byte("oneone1234")...)
 		binary.BigEndian.PutUint32(k[6:], uint32(i%10000))
 
-		_, _ = c.Get(cache.WithTTL(ctx, -1, false), k, func(ctx context.Context) (interface{}, error) {
+		_, _ = c.Get(cache.WithTTL(ctx, cache.SkipWriteTTL, false), k, func(ctx context.Context) (interface{}, error) {
 			return 123, nil
 		})
 	}
