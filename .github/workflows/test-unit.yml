@@ -92,10 +92,11 @@ jobs:
           flags: unittests
 
       - name: Count LOC
+        if: matrix.go-version == '1.16.x'
         id: loc
         run: |
           curl -OL https://github.com/vearutop/builds/releases/download/sccdiff-v0/sccdiff && chmod +x sccdiff
-          OUTPUT=$(./sccdiff -baseref master)
+          OUTPUT=$(./sccdiff -baseref ${{ github.event.pull_request.base.sha }})
           OUTPUT="${OUTPUT//'%'/'%25'}"
           OUTPUT="${OUTPUT//$'\n'/'%0A'}"
           OUTPUT="${OUTPUT//$'\r'/'%0D'}"
