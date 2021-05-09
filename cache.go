@@ -43,11 +43,6 @@ type Entry interface {
 	Value() interface{}
 }
 
-// Expirable exposes expiration time.
-type Expirable interface {
-	ExpireAt() time.Time
-}
-
 // Walker calls function for every entry in cache and fails on first error returned by that function.
 //
 // Count of processed entries is returned.
