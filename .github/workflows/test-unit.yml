@@ -89,26 +89,3 @@ jobs:
         with:
           file: ./unit.coverprofile
           flags: unittests
-
-      - name: Count LOC
-        if: matrix.go-version == '1.16.x'
-        id: loc
-        run: |
-          curl -OL https://github.com/vearutop/builds/releases/download/sccdiff-v0/sccdiff && chmod +x sccdiff
-          OUTPUT=$(./sccdiff -basedir ./__base)
-          OUTPUT="${OUTPUT//'%'/'%25'}"
-          OUTPUT="${OUTPUT//$'\n'/'%0A'}"
-          OUTPUT="${OUTPUT//$'\r'/'%0D'}"
-          echo "::set-output name=diff::$OUTPUT"
-
-      - name: Comment Code Lines
-        if: matrix.go-version == '1.16.x'
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          header: LOC
-          message: |
-            ### Lines Of Code
-
-            ${{ steps.loc.outputs.diff }}
-
