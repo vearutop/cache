@@ -46,7 +46,7 @@ func TTL(ctx context.Context) time.Duration {
 
 // WithSkipRead returns context with cache read ignored.
 //
-// With such context cache.Reader should always return ErrCacheItemNotFound discarding cached value.
+// With such context cache.Reader should always return ErrNotFound discarding cached value.
 func WithSkipRead(ctx context.Context) context.Context {
 	return context.WithValue(ctx, skipReadCtxKey{}, true)
 }

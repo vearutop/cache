@@ -7,7 +7,12 @@ import (
 	"time"
 )
 
-func (c *shardedMap) evictOldest(evictFraction float64) {
+func (c *shardedMap) evictOldest() {
+	evictFraction := c.config.EvictFraction
+	if evictFraction == 0 {
+		evictFraction = 0.1
+	}
+
 	type entry struct {
 		key      string
 		hash     uint64
@@ -15,7 +20,6 @@ func (c *shardedMap) evictOldest(evictFraction float64) {
 	}
 
 	keysCnt := c.Len()
-
 	entries := make([]entry, 0, keysCnt)
 
 	// Collect all keys and expirations.
@@ -50,22 +54,21 @@ func (c *shardedMap) evictOldest(evictFraction float64) {
 	}
 }
 
-func (c *shardedMap) evictHeapInUse() {
+func (c *shardedMap) heapInUseOverflow() bool {
 	if c.config.HeapInUseSoftLimit == 0 {
-		return
+		return false
 	}
 
 	m := runtime.MemStats{}
 	runtime.ReadMemStats(&m)
 
-	if m.HeapInuse < c.config.HeapInUseSoftLimit {
-		return
+	return m.HeapInuse >= c.config.HeapInUseSoftLimit
+}
+
+func (c *shardedMap) countOverflow() bool {
+	if c.config.CountSoftLimit == 0 {
+		return false
 	}
 
-	evictFraction := c.config.HeapInUseEvictFraction
-	if evictFraction == 0 {
-		evictFraction = 0.1
-	}
-
-	c.evictOldest(evictFraction)
+	return c.Len() >= int(c.config.CountSoftLimit)
 }

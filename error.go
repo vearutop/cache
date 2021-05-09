@@ -1,14 +1,17 @@
 package cache
 
+import "time"
+
 // SentinelError is an error.
 type SentinelError string
 
 const (
-	// ErrExpiredCacheItem indicates expired cache entry.
-	ErrExpiredCacheItem = SentinelError("expired cache item")
+	// ErrExpired indicates expired cache entry,
+	// may implement ErrWithExpiredItem to enable stale value serving.
+	ErrExpired = SentinelError("expired cache item")
 
-	// ErrCacheItemNotFound indicates missing cache entry.
-	ErrCacheItemNotFound = SentinelError("missing cache item")
+	// ErrNotFound indicates missing cache entry.
+	ErrNotFound = SentinelError("missing cache item")
 
 	// ErrNothingToInvalidate indicates no caches were added to Invalidator.
 	ErrNothingToInvalidate = SentinelError("nothing to invalidate")
@@ -20,4 +23,11 @@ const (
 // Error implements error.
 func (e SentinelError) Error() string {
 	return string(e)
+}
+
+// ErrWithExpiredItem defines an expiration error with entry details.
+type ErrWithExpiredItem interface {
+	error
+	Value() interface{}
+	ExpiredAt() time.Time
 }

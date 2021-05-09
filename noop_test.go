@@ -11,7 +11,7 @@ import (
 func TestNoOp_Read(t *testing.T) {
 	v, err := cache.NoOp{}.Read(context.Background(), []byte("foo"))
 	assert.Nil(t, v)
-	assert.EqualError(t, err, "missing cache item")
+	assert.EqualError(t, err, cache.ErrNotFound.Error())
 }
 
 func TestNoOp_Write(t *testing.T) {
@@ -20,5 +20,10 @@ func TestNoOp_Write(t *testing.T) {
 
 	v, err := cache.NoOp{}.Read(context.Background(), []byte("foo"))
 	assert.Nil(t, v)
-	assert.EqualError(t, err, "missing cache item")
+	assert.EqualError(t, err, cache.ErrNotFound.Error())
+}
+
+func TestNoOp_Delete(t *testing.T) {
+	err := cache.NoOp{}.Delete(context.Background(), []byte("foo"))
+	assert.EqualError(t, err, cache.ErrNotFound.Error())
 }

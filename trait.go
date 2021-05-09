@@ -11,23 +11,17 @@ import (
 type trait struct {
 	closed chan struct{}
 
-	config MemoryConfig
+	config Config
 	log    ctxd.Logger
 	stat   stats.Tracker
 }
 
 type backend interface {
 	Len() int
-	clearExpiredBefore(t time.Time)
+	deleteExpiredBefore(t time.Time)
 }
 
-func newTrait(b backend, cfg ...MemoryConfig) *trait {
-	config := MemoryConfig{}
-
-	if len(cfg) >= 1 {
-		config = cfg[0]
-	}
-
+func newTrait(b backend, config Config) *trait {
 	if config.DeleteExpiredAfter == 0 {
 		config.DeleteExpiredAfter = 24 * time.Hour
 	}
@@ -59,12 +53,12 @@ func newTrait(b backend, cfg ...MemoryConfig) *trait {
 		go t.reportItemsCount(b)
 	}
 
-	go t.cleaner(b)
+	go t.janitor(b)
 
 	return t
 }
 
-func (c *trait) prepareRead(ctx context.Context, cacheEntry entry, found bool) (interface{}, error) {
+func (c *trait) prepareRead(ctx context.Context, cacheEntry *entry, found bool) (interface{}, error) {
 	if !found {
 		if c.log != nil {
 			c.log.Debug(ctx, "cache miss", "name", c.config.Name)
@@ -74,7 +68,7 @@ func (c *trait) prepareRead(ctx context.Context, cacheEntry entry, found bool) (
 			c.stat.Add(ctx, MetricMiss, 1, "name", c.config.Name)
 		}
 
-		return nil, ErrCacheItemNotFound
+		return nil, ErrNotFound
 	}
 
 	if cacheEntry.E.Before(time.Now()) {
@@ -86,7 +80,7 @@ func (c *trait) prepareRead(ctx context.Context, cacheEntry entry, found bool) (
 			c.stat.Add(ctx, MetricExpired, 1, "name", c.config.Name)
 		}
 
-		return cacheEntry.V, errExpired{entry: cacheEntry}
+		return nil, errExpired{entry: cacheEntry}
 	}
 
 	if c.stat != nil {
@@ -123,7 +117,7 @@ func (c *trait) reportItemsCount(b backend) {
 			}
 		case <-c.closed:
 			if c.log != nil {
-				c.log.Debug(context.Background(), "exiting cache items counter goroutine",
+				c.log.Debug(context.Background(), "closing cache items counter goroutine",
 					"name", c.config.Name)
 			}
 
@@ -136,17 +130,17 @@ func (c *trait) reportItemsCount(b backend) {
 	}
 }
 
-func (c *trait) cleaner(b backend) {
+func (c *trait) janitor(b backend) {
 	for {
 		interval := c.config.DeleteExpiredJobInterval
 
 		select {
 		case <-time.After(interval):
 			expirationBoundary := time.Now().Add(-c.config.DeleteExpiredAfter)
-			b.clearExpiredBefore(expirationBoundary)
+			b.deleteExpiredBefore(expirationBoundary)
 		case <-c.closed:
 			if c.log != nil {
-				c.log.Debug(context.Background(), "exiting expired cache cleaner",
+				c.log.Debug(context.Background(), "closing cache janitor",
 					"name", c.config.Name)
 			}
 
@@ -155,8 +149,8 @@ func (c *trait) cleaner(b backend) {
 	}
 }
 
-// MemoryConfig controls in-RWMutexMap cache instance.
-type MemoryConfig struct {
+// Config controls cache instance.
+type Config struct {
 	// Logger is an instance of contextualized logger, can be nil.
 	Logger ctxd.Logger
 
@@ -183,21 +177,39 @@ type MemoryConfig struct {
 	// If enabled, entry TTL will be randomly altered in bounds of ±(ExpirationJitter * TTL / 2).
 	ExpirationJitter float64
 
-	// HeapInUseSoftLimit sets heap in use threshold when eviction of most expired items will be performed.
+	// HeapInUseSoftLimit sets heap in use threshold when eviction of most expired items will be triggered.
 	//
 	// Eviction is a part of delete expired job, eviction runs at most once per delete expired job and
-	// removes most expired entries up to HeapInUseEvictFraction.
+	// removes most expired entries up to EvictFraction.
 	HeapInUseSoftLimit uint64
 
-	// HeapInUseEvictFraction is a fraction of total count of items to be evicted (0, 1], default 0.1 (10% of items).
-	HeapInUseEvictFraction float64
+	// CountSoftLimit sets count threshold when eviction of most expired items will be triggered.
+	//
+	// Eviction is a part of delete expired job, eviction runs at most once per delete expired job and
+	// removes most expired entries up to EvictFraction.
+	CountSoftLimit uint64
+
+	// EvictFraction is a fraction (0, 1] of total count of items to be evicted when resource is overused,
+	// default 0.1 (10% of items).
+	EvictFraction float64
+}
+
+// Use is a functional option to apply configuration.
+func (c Config) Use(cfg *Config) {
+	*cfg = c
+}
+
+type keyString []byte
+
+func (ks keyString) MarshalText() ([]byte, error) {
+	return ks, nil
 }
 
 // entry is a cache entry.
 type entry struct {
-	K []byte
-	V interface{}
-	E time.Time
+	K keyString   `json:"key"`
+	V interface{} `json:"val"`
+	E time.Time   `json:"exp"`
 }
 
 func (e entry) Key() []byte {
@@ -213,11 +225,11 @@ func (e entry) ExpireAt() time.Time {
 }
 
 type errExpired struct {
-	entry entry
+	entry *entry
 }
 
 func (e errExpired) Error() string {
-	return ErrExpiredCacheItem.Error()
+	return ErrExpired.Error()
 }
 
 func (e errExpired) Value() interface{} {
@@ -229,5 +241,5 @@ func (e errExpired) ExpiredAt() time.Time {
 }
 
 func (e errExpired) Is(err error) bool {
-	return err == ErrExpiredCacheItem // nolint:errorlint,goerr113  // Target sentinel error is not wrapped.
+	return err == ErrExpired // nolint:errorlint,goerr113  // Target sentinel error is not wrapped.
 }

@@ -12,7 +12,7 @@ import (
 
 func ExampleNewShardedMap() {
 	// Create cache instance.
-	c := cache.NewShardedMap(cache.MemoryConfig{
+	c := cache.NewShardedMap(cache.Config{
 		Name:       "dogs",
 		TimeToLive: 13 * time.Minute,
 		Logger:     &ctxd.LoggerMock{},
@@ -23,8 +23,8 @@ func ExampleNewShardedMap() {
 		DeleteExpiredAfter:       time.Hour,
 		DeleteExpiredJobInterval: 10 * time.Minute,
 		HeapInUseSoftLimit:       200 * 1024 * 1024, // 200MB soft limit for process heap in use.
-		HeapInUseEvictFraction:   0.2,               // Drop 20% of mostly expired items (including non-expired) on heap overuse.
-	})
+		EvictFraction:            0.2,               // Drop 20% of mostly expired items (including non-expired) on heap overuse.
+	}.Use)
 
 	// Use context if available.
 	ctx := context.TODO()

@@ -43,7 +43,7 @@ func TestFailover_Get_ValueConcurrency(t *testing.T) {
 	ctx := context.Background()
 	sc := cache.NewFailover(cache.FailoverConfig{
 		SyncRead: true,
-	})
+	}.Use)
 
 	var wg sync.WaitGroup
 
@@ -92,7 +92,7 @@ func TestFailover_Get_ErrorConcurrency(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	sc := cache.NewFailover(cache.FailoverConfig{})
+	sc := cache.NewFailover()
 
 	var wg sync.WaitGroup
 
@@ -130,7 +130,7 @@ func TestFailover_Get_FailedUpdateTTL(t *testing.T) {
 	c := cache.NewFailover(
 		cache.FailoverConfig{
 			FailedUpdateTTL: -1,
-		})
+		}.Use)
 
 	val, err := c.Get(ctx, []byte("key"), buildFunc)
 	assert.Error(t, err)
@@ -142,7 +142,7 @@ func TestFailover_Get_FailedUpdateTTL(t *testing.T) {
 	assert.Nil(t, val)
 	assert.Equal(t, 2, cnt)
 
-	c = cache.NewFailover(cache.FailoverConfig{})
+	c = cache.NewFailover()
 
 	cnt = 0
 	val, err = c.Get(ctx, []byte("key"), buildFunc)
@@ -168,11 +168,11 @@ func TestFailover_Get_BackgroundUpdate(t *testing.T) {
 	c := cache.NewFailover(
 		cache.FailoverConfig{
 			Logger: logger,
-			BackendConfig: cache.MemoryConfig{
+			BackendConfig: cache.Config{
 				TimeToLive: time.Millisecond,
 			},
 			SyncRead: true,
-		},
+		}.Use,
 	)
 
 	val, err := c.Get(ctx, []byte("key"), func(ctx context.Context) (i interface{}, e error) {
@@ -215,12 +215,12 @@ func TestFailover_Get_BackgroundUpdateMaxExpiration(t *testing.T) {
 	logger := ctxd.NoOpLogger{}
 	c := cache.NewFailover(
 		cache.FailoverConfig{
-			Logger:        logger,
-			MaxExpiration: time.Nanosecond,
-			BackendConfig: cache.MemoryConfig{
+			Logger:       logger,
+			MaxStaleness: time.Nanosecond,
+			BackendConfig: cache.Config{
 				TimeToLive: time.Millisecond,
 			},
-		},
+		}.Use,
 	)
 
 	val, err := c.Get(ctx, []byte("key"), func(ctx context.Context) (i interface{}, e error) {
@@ -240,7 +240,7 @@ func TestFailover_Get_BackgroundUpdateMaxExpiration(t *testing.T) {
 		return "second value", nil
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, "second value", val) // Stale value not returned due to MaxExpiration, background update.
+	assert.Equal(t, "second value", val) // Stale value not returned due to MaxStaleness, background update.
 	assert.Equal(t, int64(2), atomic.LoadInt64(&cnt))
 
 	time.Sleep(10 * time.Millisecond)
@@ -264,10 +264,10 @@ func TestFailover_Get_SyncUpdate(t *testing.T) {
 		cache.FailoverConfig{
 			SyncUpdate: true,
 			Logger:     ctxd.NoOpLogger{},
-			BackendConfig: cache.MemoryConfig{
+			BackendConfig: cache.Config{
 				TimeToLive: time.Millisecond,
 			},
-		},
+		}.Use,
 	)
 
 	val, err := c.Get(ctx, []byte("key"), func(ctx context.Context) (i interface{}, e error) {
@@ -311,7 +311,7 @@ func TestFailover_Get_updateErr(t *testing.T) {
 
 	c := cache.NewFailover(cache.FailoverConfig{
 		Backend: mc,
-	})
+	}.Use)
 
 	v, err := c.Get(ctx, []byte(key), func(ctx context.Context) (interface{}, error) {
 		return 123, nil
@@ -319,7 +319,7 @@ func TestFailover_Get_updateErr(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 123, v)
 
-	mc.ExpireAll()
+	mc.ExpireAll(ctx)
 
 	v, err = c.Get(ctx, []byte(key), func(ctx context.Context) (interface{}, error) {
 		return nil, errors.New("failed")
@@ -346,7 +346,7 @@ func TestFailover_Get_mutability(t *testing.T) {
 		Backend:           mc,
 		Stats:             s,
 		ObserveMutability: true,
-	})
+	}.Use)
 	ctx := context.TODO()
 
 	// First value served.
@@ -354,7 +354,7 @@ func TestFailover_Get_mutability(t *testing.T) {
 		return 123, nil
 	})
 	assert.NoError(t, err)
-	mc.ExpireAll()
+	mc.ExpireAll(ctx)
 
 	time.Sleep(time.Millisecond)
 	assert.Equal(t, 1, s.Int(cache.MetricBuild))
@@ -365,7 +365,7 @@ func TestFailover_Get_mutability(t *testing.T) {
 		return 123, nil
 	})
 	assert.NoError(t, err)
-	mc.ExpireAll()
+	mc.ExpireAll(ctx)
 
 	time.Sleep(time.Millisecond)
 	assert.Equal(t, 2, s.Int(cache.MetricBuild))
@@ -376,7 +376,7 @@ func TestFailover_Get_mutability(t *testing.T) {
 		return 321, nil
 	})
 	assert.NoError(t, err)
-	mc.ExpireAll()
+	mc.ExpireAll(ctx)
 
 	time.Sleep(time.Millisecond)
 	assert.Equal(t, 3, s.Int(cache.MetricBuild))
@@ -387,7 +387,7 @@ func TestFailover_Get_keyLock(t *testing.T) {
 	concurrentCnt := int64(0)
 
 	ctx := context.Background()
-	sc := cache.NewFailover(cache.FailoverConfig{SyncUpdate: true})
+	sc := cache.NewFailover(cache.FailoverConfig{SyncUpdate: true}.Use)
 
 	// some serious and slow processing may happen here
 	updateFunc := func(_ []byte) interface{} {
@@ -436,7 +436,7 @@ func TestFailover_Get_lowCardinalityKey(t *testing.T) {
 		Stats:    st,
 		SyncRead: true,
 		Logger:   &l,
-	})
+	}.Use)
 
 	concurrencyLimit := 500
 	pipeline := make(chan struct{}, concurrencyLimit)
@@ -512,7 +512,7 @@ func TestFailover_Get_staleBlock(t *testing.T) {
 	c := cache.NewFailover(cache.FailoverConfig{
 		SyncUpdate: true,
 		Stats:      st,
-	})
+	}.Use)
 	ctx := context.Background()
 
 	keysCount := 500
@@ -592,7 +592,7 @@ func TestFailover_Get_staleValue(t *testing.T) {
 		SyncUpdate: true,
 		Stats:      st,
 		SyncRead:   true,
-	})
+	}.Use)
 	ctx := context.Background()
 
 	concurrencyLimit := 500
@@ -677,7 +677,7 @@ func TestFailover_Get_misses(t *testing.T) {
 	st := &stats.TrackerMock{}
 	c := cache.NewFailover(cache.FailoverConfig{
 		Stats: st,
-	})
+	}.Use)
 	ctx := context.Background()
 
 	n := 10000
@@ -722,8 +722,8 @@ func TestFailover_Get_misses(t *testing.T) {
 
 func TestFailover_Get_alwaysFail(t *testing.T) {
 	c := cache.NewFailover(cache.FailoverConfig{
-		BackendConfig: cache.MemoryConfig{TimeToLive: time.Minute},
-	})
+		BackendConfig: cache.Config{TimeToLive: time.Minute},
+	}.Use)
 	ctx := context.Background()
 
 	n := 500

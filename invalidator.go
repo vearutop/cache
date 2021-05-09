@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -14,13 +15,13 @@ type Invalidator struct {
 	SkipInterval time.Duration
 
 	// Callbacks contains a list of functions to call on invalidate.
-	Callbacks []func()
+	Callbacks []func(ctx context.Context)
 
 	lastRun time.Time
 }
 
 // Invalidate triggers cache expiration.
-func (i *Invalidator) Invalidate() error {
+func (i *Invalidator) Invalidate(ctx context.Context) error {
 	if i.Callbacks == nil {
 		return ErrNothingToInvalidate
 	}
@@ -39,7 +40,7 @@ func (i *Invalidator) Invalidate() error {
 
 	i.lastRun = time.Now()
 	for _, cb := range i.Callbacks {
-		cb()
+		cb(ctx)
 	}
 
 	return nil

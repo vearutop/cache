@@ -2,57 +2,16 @@ package cache
 
 import (
 	"encoding/gob"
-	"errors"
 	"hash"
 	"hash/fnv"
-	"io"
 	"reflect"
 	"strings"
-
-	"github.com/cespare/xxhash/v2"
 )
 
-// Dump saves cached entries and returns a number of processed entries.
-func (c *ShardedMap) Dump(w io.Writer) (int, error) {
-	encoder := gob.NewEncoder(w)
-
-	return c.Walk(func(e Entry) error {
-		return encoder.Encode(e)
-	})
-}
-
-// Restore loads cached entries and returns number of processed entries.
-func (c *ShardedMap) Restore(r io.Reader) (int, error) {
-	var (
-		decoder = gob.NewDecoder(r)
-		e       entry
-		n       = 0
-	)
-
-	for {
-		err := decoder.Decode(&e)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-
-			return n, err
-		}
-
-		h := xxhash.Sum64(e.K)
-		b := &c.hashedBuckets[h%shards]
-
-		b.Lock()
-		b.data[h] = e
-		b.Unlock()
-
-		n++
-	}
-
-	return n, nil
-}
-
-var gobTypesHash uint64
+var (
+	gobTypesHash uint64
+	gobTypes     map[reflect.Type]bool
+)
 
 // GobTypesHashReset resets types hash to zero value.
 func GobTypesHashReset() {
@@ -67,11 +26,21 @@ func GobTypesHash() uint64 {
 // GobRegister enables cached type transferring.
 func GobRegister(values ...interface{}) {
 	for _, value := range values {
-		h := fnv.New64()
 		t := reflect.TypeOf(value)
+		if gobTypes[t] {
+			continue
+		}
+
+		h := fnv.New64()
 		_, _ = h.Write([]byte(t.PkgPath() + t.String()))
 		recursiveTypeHash(t, h, map[reflect.Type]bool{})
 		gobTypesHash ^= h.Sum64()
+
+		if gobTypes == nil {
+			gobTypes = make(map[reflect.Type]bool)
+		}
+
+		gobTypes[t] = true
 
 		gob.Register(value)
 	}

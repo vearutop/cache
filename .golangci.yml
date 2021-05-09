@@ -16,6 +16,13 @@ linters-settings:
     check-exported: false
   unparam:
     check-exported: true
+  cyclop:
+    max-complexity: 18
+  funlen:
+    lines: 120
+    statements: 60
+  nestif:
+    min-complexity: 6
 
 linters:
   enable-all: true
@@ -45,5 +52,6 @@ issues:
         - funlen
         - dupl
         - errcheck
+        - errorlint
       path: "_test.go"
 

@@ -5,8 +5,8 @@
 //
 //  - High level of control with rich configuration.
 //  - No external dependencies.
-//  - Separated expiration and cleaner allows usage of stale values to protect from upstream errors and racy updates.
-//  - Background cleaner does not affect sync performance.
+//  - Separated expiration and janitor allows usage of stale values to protect from upstream errors and racy updates.
+//  - Background janitor does not affect sync performance.
 //  - Build errors are cached with low TTL to avoid flooding unhealthy upstream.
 //  - Background update of expired cache value improves performance.
 //  - Cache updates are locked per key to eliminate racy updates and only update once.

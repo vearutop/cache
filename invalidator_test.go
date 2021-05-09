@@ -13,12 +13,11 @@ import (
 func TestInvalidator_Invalidate(t *testing.T) {
 	cache1 := cache.NewShardedMap()
 	cache2 := cache.NewShardedMap()
+	ctx := context.Background()
 
 	i := &cache.Invalidator{}
-	err := i.Invalidate()
+	err := i.Invalidate(ctx)
 	assert.Error(t, err) // nothing to invalidate
-
-	ctx := context.Background()
 
 	i.Callbacks = append(i.Callbacks, cache1.ExpireAll, cache2.ExpireAll)
 
@@ -33,16 +32,16 @@ func TestInvalidator_Invalidate(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 2, val)
 
-	err = i.Invalidate()
+	err = i.Invalidate(ctx)
 	assert.NoError(t, err)
 	time.Sleep(time.Millisecond)
 
 	_, err = cache1.Read(ctx, []byte("key"))
-	assert.True(t, errors.Is(err, cache.ErrExpiredCacheItem))
+	assert.True(t, errors.Is(err, cache.ErrExpired))
 
 	_, err = cache2.Read(ctx, []byte("key"))
-	assert.True(t, errors.Is(err, cache.ErrExpiredCacheItem))
+	assert.True(t, errors.Is(err, cache.ErrExpired))
 
-	err = i.Invalidate()
+	err = i.Invalidate(ctx)
 	assert.Error(t, err) // already invalidated
 }

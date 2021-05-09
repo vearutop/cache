@@ -9,12 +9,17 @@ type NoOp struct{}
 
 var _ ReadWriter = NoOp{}
 
-// Write discards value.
+// Write does nothing.
 func (NoOp) Write(_ context.Context, _ []byte, _ interface{}) error {
 	return nil
 }
 
-// Read does not find anything.
+// Read is always missing item.
 func (NoOp) Read(_ context.Context, _ []byte) (interface{}, error) {
-	return nil, ErrCacheItemNotFound
+	return nil, ErrNotFound
+}
+
+// Delete is always missing item.
+func (NoOp) Delete(_ context.Context, _ []byte) error {
+	return ErrNotFound
 }

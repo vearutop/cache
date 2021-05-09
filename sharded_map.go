@@ -3,6 +3,9 @@ package cache
 import (
 	"bytes"
 	"context"
+	"encoding/gob"
+	"errors"
+	"io"
 	"math/rand"
 	"runtime"
 	"sync"
@@ -20,7 +23,7 @@ const shards = 128
 
 type hashedBucket struct {
 	sync.RWMutex
-	data map[uint64]entry
+	data map[uint64]*entry
 }
 
 // ShardedMap is an in-memory cache backend.
@@ -35,20 +38,25 @@ type shardedMap struct {
 }
 
 // NewShardedMap creates an instance of in-memory cache with optional configuration.
-func NewShardedMap(cfg ...MemoryConfig) *ShardedMap {
+func NewShardedMap(options ...func(cfg *Config)) *ShardedMap {
 	c := &shardedMap{}
 	C := &ShardedMap{
 		shardedMap: c,
 	}
 
 	for i := 0; i < shards; i++ {
-		c.hashedBuckets[i].data = make(map[uint64]entry)
+		c.hashedBuckets[i].data = make(map[uint64]*entry)
 	}
 
-	c.trait = newTrait(C, cfg...)
+	cfg := Config{}
+	for _, option := range options {
+		option(&cfg)
+	}
+
+	c.trait = newTrait(c, cfg)
 
 	runtime.SetFinalizer(C, func(m *ShardedMap) {
-		close(c.closed)
+		close(m.closed)
 	})
 
 	return C
@@ -57,7 +65,7 @@ func NewShardedMap(cfg ...MemoryConfig) *ShardedMap {
 // Read gets value.
 func (c *shardedMap) Read(ctx context.Context, key []byte) (interface{}, error) {
 	if SkipRead(ctx) {
-		return nil, ErrCacheItemNotFound
+		return nil, ErrNotFound
 	}
 
 	h := xxhash.Sum64(key)
@@ -90,10 +98,15 @@ func (c *shardedMap) Write(ctx context.Context, k []byte, v interface{}) error {
 	key := make([]byte, len(k))
 	copy(key, k)
 
-	b.data[h] = entry{V: v, K: key, E: time.Now().Add(ttl)}
+	b.data[h] = &entry{V: v, K: key, E: time.Now().Add(ttl)}
 
 	if c.log != nil {
-		c.log.Debug(ctx, "wrote to cache", "name", c.config.Name, "key", key, "value", v, "ttl", ttl)
+		c.log.Debug(ctx, "wrote to cache",
+			"name", c.config.Name,
+			"key", string(key),
+			"value", v,
+			"ttl", ttl,
+		)
 	}
 
 	if c.stat != nil {
@@ -112,17 +125,25 @@ func (c *shardedMap) Delete(ctx context.Context, key []byte) error {
 
 	cachedEntry, found := b.data[h]
 	if !found || !bytes.Equal(cachedEntry.K, key) {
-		return ErrCacheItemNotFound
+		return ErrNotFound
 	}
 
 	delete(b.data, h)
+
+	if c.log != nil {
+		c.log.Debug(ctx, "deleted cache entry",
+			"name", c.config.Name,
+			"key", string(key),
+		)
+	}
 
 	return nil
 }
 
 // ExpireAll marks all entries as expired, they can still serve stale cache.
-func (c *shardedMap) ExpireAll() {
+func (c *shardedMap) ExpireAll(ctx context.Context) {
 	now := time.Now()
+	cnt := 0
 
 	for i := range c.hashedBuckets {
 		b := &c.hashedBuckets[i]
@@ -130,25 +151,46 @@ func (c *shardedMap) ExpireAll() {
 		for h, v := range b.data {
 			v.E = now
 			b.data[h] = v
+			cnt++
 		}
 		b.Unlock()
 	}
+
+	if c.log != nil {
+		c.log.Important(ctx, "expired all entries in cache",
+			"name", c.config.Name,
+			"elapsed", time.Since(now).String(),
+			"count", cnt,
+		)
+	}
 }
 
-// RemoveAll deletes all entries.
-func (c *shardedMap) RemoveAll() {
+// DeleteAll erases all entries.
+func (c *shardedMap) DeleteAll(ctx context.Context) {
+	now := time.Now()
+	cnt := 0
+
 	for i := range c.hashedBuckets {
 		b := &c.hashedBuckets[i]
 
 		b.Lock()
 		for h := range c.hashedBuckets[i].data {
 			delete(b.data, h)
+			cnt++
 		}
 		b.Unlock()
 	}
+
+	if c.log != nil {
+		c.log.Important(ctx, "deleted all entries in cache",
+			"name", c.config.Name,
+			"elapsed", time.Since(now).String(),
+			"count", cnt,
+		)
+	}
 }
 
-func (c *shardedMap) clearExpiredBefore(expirationBoundary time.Time) {
+func (c *shardedMap) deleteExpiredBefore(expirationBoundary time.Time) {
 	for i := range c.hashedBuckets {
 		b := &c.hashedBuckets[i]
 
@@ -161,7 +203,9 @@ func (c *shardedMap) clearExpiredBefore(expirationBoundary time.Time) {
 		b.Unlock()
 	}
 
-	c.evictHeapInUse()
+	if c.heapInUseOverflow() || c.countOverflow() {
+		c.evictOldest()
+	}
 }
 
 // Len returns number of elements in cache.
@@ -199,6 +243,52 @@ func (c *shardedMap) Walk(walkFn func(e Entry) error) (int, error) {
 			b.RLock()
 		}
 		b.RUnlock()
+	}
+
+	return n, nil
+}
+
+// Dump saves cached entries and returns a number of processed entries.
+//
+// Dump uses encoding/gob to serialize cache entries, therefore it is necessary to
+// register cached types in advance with cache.GobRegister.
+func (c *ShardedMap) Dump(w io.Writer) (int, error) {
+	encoder := gob.NewEncoder(w)
+
+	return c.Walk(func(e Entry) error {
+		return encoder.Encode(e)
+	})
+}
+
+// Restore loads cached entries and returns number of processed entries.
+//
+// Restore uses encoding/gob to unserialize cache entries, therefore it is necessary to
+// register cached types in advance with cache.GobRegister.
+func (c *ShardedMap) Restore(r io.Reader) (int, error) {
+	var (
+		decoder = gob.NewDecoder(r)
+		e       entry
+		n       = 0
+	)
+
+	for {
+		err := decoder.Decode(&e)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+
+			return n, err
+		}
+
+		h := xxhash.Sum64(e.K)
+		b := &c.hashedBuckets[h%shards]
+
+		b.Lock()
+		b.data[h] = &e
+		b.Unlock()
+
+		n++
 	}
 
 	return n, nil

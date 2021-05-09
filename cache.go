@@ -14,8 +14,7 @@ const SkipWriteTTL = time.Duration(-1)
 
 // Reader reads from cache.
 type Reader interface {
-	// Read returns cached value and/or error.
-	// if ErrExpiredCacheItem is returned, expired cache value must be returned as well.
+	// Read returns cached value or error.
 	Read(ctx context.Context, key []byte) (interface{}, error)
 }
 
@@ -27,7 +26,8 @@ type Writer interface {
 
 // Deleter deletes from cache.
 type Deleter interface {
-	// Delete removes a cache entry with a given key.
+	// Delete removes a cache entry with a given key
+	// and returns ErrNotFound for non-existent keys.
 	Delete(ctx context.Context, key []byte) error
 }
 
@@ -52,7 +52,7 @@ type Expirable interface {
 //
 // Count of processed entries is returned.
 type Walker interface {
-	Walk(func(key string, entry Entry) error) (int, error)
+	Walk(func(entry Entry) error) (int, error)
 }
 
 // Dumper dumps cache entries in binary format.
@@ -63,11 +63,4 @@ type Dumper interface {
 // Restorer restores cache entries from binary dump.
 type Restorer interface {
 	Restore(r io.Reader) (int, error)
-}
-
-// ErrExpired defines an expiration error with entry details.
-type ErrExpired interface {
-	error
-	Value() interface{}
-	ExpiredAt() time.Time
 }
