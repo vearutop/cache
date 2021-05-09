@@ -7,16 +7,18 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+        with:
+          path: pr
       - name: Checkout base code
         uses: actions/checkout@v2
         with:
           ref: ${{ github.event.pull_request.base.sha }}
-          path: __base
+          path: base
       - name: Count Lines Of Code
         id: loc
         run: |
           curl -OL https://github.com/vearutop/builds/releases/download/sccdiff-v0/sccdiff && chmod +x sccdiff
-          OUTPUT=$(./sccdiff -basedir ./__base)
+          OUTPUT=$(cd pr && ../sccdiff -basedir ../base)
           OUTPUT="${OUTPUT//'%'/'%25'}"
           OUTPUT="${OUTPUT//$'\n'/'%0A'}"
           OUTPUT="${OUTPUT//$'\r'/'%0D'}"
