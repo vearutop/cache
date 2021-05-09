@@ -11,26 +11,16 @@ import (
 	"github.com/bool64/stats"
 )
 
-// StaleConfig is an alias of FailoverConfig.
-//
-// Deprecated: use FailoverConfig.
-type StaleConfig = FailoverConfig
-
 // FailoverConfig is optional configuration for NewFailover.
 type FailoverConfig struct {
 	// Name is added to logs and stats.
 	Name string
 
-	// Upstream is a cache instance, in-memory created by default.
-	Upstream ReadWriter
+	// Backend is a cache instance, ShardedMap created by default.
+	Backend ReadWriter
 
-	// UpstreamConfig is a configuration for in-memory cache instance if Upstream is not provided.
-	UpstreamConfig MemoryConfig
-
-	// DefaultTTL is default ttl to store cached value, only used with nil Upstream.
-	//
-	// Deprecated: use UpstreamConfig.TimeToLive.
-	DefaultTTL time.Duration
+	// BackendConfig is a configuration for ShardedMap cache instance if Backend is not provided.
+	BackendConfig Config
 
 	// FailedUpdateTTL is ttl of failed build cache, default 20s, -1 disables errors cache.
 	FailedUpdateTTL time.Duration
@@ -38,47 +28,42 @@ type FailoverConfig struct {
 	// UpdateTTL is a time interval to retry update, default 1 minute.
 	UpdateTTL time.Duration
 
-	// SyncUpdate enables sync update, false value is disregarded.
-	//
-	// Deprecated: use BackgroundUpdate to update policy.
+	// SyncUpdate disables update in background, default is background update with stale value served.
 	SyncUpdate bool
 
-	// BackgroundUpdate enables update in background, default is sync update with updated value served.
-	BackgroundUpdate bool
-
-	// SyncRead enables upstream reading in the critical section to ensure cache miss
+	// SyncRead enables backend reading in the critical section to ensure cache miss
 	// will not trigger multiple updates sequentially.
 	//
 	// Probability of such issue is low, there is performance penalty for enabling this option.
 	SyncRead bool
 
-	// ObserveMutability enables deep equal check with metric collection on cache update.
-	ObserveMutability bool
-
-	// MaxExpiration is duration of stale value fitness.
+	// MaxStaleness is duration when value can be served after expiration.
 	// If value has expired longer than this duration it won't be served unless value update failure.
-	MaxExpiration time.Duration
+	MaxStaleness time.Duration
 
 	// Logger collects messages with context.
 	Logger ctxd.Logger
 
 	// Stats tracks stats.
 	Stats stats.Tracker
+
+	// ObserveMutability enables deep equal check with metric collection on cache update.
+	ObserveMutability bool
 }
 
-// Stale is an alias of Failover.
-//
-// Deprecated: use Failover.
-type Stale = Failover
+// Use is a functional option for NewFailover to apply configuration.
+func (fc FailoverConfig) Use(cfg *FailoverConfig) {
+	*cfg = fc
+}
 
-// Failover automatically updates cache without races.
+// Failover is a cache frontend to manage cache updates in a non-conflicting and performant way.
 //
 // Please use NewFailover to create instance.
 type Failover struct {
 	// Errors caches errors of failed updates.
-	Errors *Memory
+	Errors *ShardedMap
 
-	upstream ReadWriter
+	backend  ReadWriter
 	lock     sync.Mutex               // Securing keyLocks
 	keyLocks map[string]chan struct{} // Preventing update concurrency per key
 	config   FailoverConfig
@@ -88,141 +73,141 @@ type Failover struct {
 
 // NewFailover creates a Failover cache instance.
 //
-// Build is locked per key to avoid concurrent updates.
+// Build is locked per key to avoid concurrent updates, new value is served .
 // Stale value is served during non-concurrent update (up to FailoverConfig.UpdateTTL long).
-// Optional configuration can be provided with FailoverConfig (only first argument is used).
-func NewFailover(config FailoverConfig) *Failover {
-	if config.UpdateTTL == 0 {
-		config.UpdateTTL = time.Minute
+func NewFailover(options ...func(cfg *FailoverConfig)) *Failover {
+	cfg := FailoverConfig{}
+	for _, option := range options {
+		option(&cfg)
 	}
 
-	if config.FailedUpdateTTL == 0 {
-		config.FailedUpdateTTL = 20 * time.Second
+	if cfg.UpdateTTL == 0 {
+		cfg.UpdateTTL = time.Minute
 	}
 
-	sc := &Failover{}
-	sc.config = config
-
-	sc.log = config.Logger
-	if sc.log == nil {
-		sc.log = ctxd.NoOpLogger{}
+	if cfg.FailedUpdateTTL == 0 {
+		cfg.FailedUpdateTTL = 20 * time.Second
 	}
 
-	sc.stat = config.Stats
-	if sc.stat == nil {
-		sc.stat = stats.NoOp{}
+	f := &Failover{}
+	f.config = cfg
+	f.log = cfg.Logger
+	f.stat = cfg.Stats
+	f.backend = cfg.Backend
+
+	if f.backend == nil {
+		cfg.BackendConfig.Name = cfg.Name
+		cfg.BackendConfig.Logger = cfg.Logger
+		cfg.BackendConfig.Stats = cfg.Stats
+		f.backend = NewShardedMap(cfg.BackendConfig.Use)
 	}
 
-	sc.upstream = config.Upstream
-
-	if sc.upstream == nil {
-		config.UpstreamConfig.Name = config.Name
-		config.UpstreamConfig.Logger = config.Logger
-		config.UpstreamConfig.Stats = config.Stats
-		sc.upstream = NewMemory(config.UpstreamConfig)
-	}
-
-	if config.FailedUpdateTTL > -1 {
-		sc.Errors = NewMemory(MemoryConfig{
-			Name:       "err_" + config.Name,
-			Logger:     config.Logger,
-			Stats:      config.Stats,
-			TimeToLive: config.FailedUpdateTTL,
+	if cfg.FailedUpdateTTL > -1 {
+		f.Errors = NewShardedMap(Config{
+			Name:       "err_" + cfg.Name,
+			Logger:     cfg.Logger,
+			Stats:      cfg.Stats,
+			TimeToLive: cfg.FailedUpdateTTL,
 
 			// Short cleanup intervals to avoid storing potentially heavy errors for long time.
 			DeleteExpiredAfter:       time.Minute,
 			DeleteExpiredJobInterval: time.Minute,
-		})
+		}.Use)
 	}
 
-	sc.keyLocks = make(map[string]chan struct{})
+	f.keyLocks = make(map[string]chan struct{})
 
-	return sc
+	return f
 }
 
 // Get returns value from cache or from build function.
-func (sc *Failover) Get(ctx context.Context, key string, buildFunc func(ctx context.Context) (interface{}, error)) (interface{}, error) {
+func (f *Failover) Get(
+	ctx context.Context,
+	key []byte,
+	buildFunc func(ctx context.Context,
+	) (interface{}, error)) (interface{}, error) {
 	var (
 		value interface{}
 		err   error
 	)
 
 	// Performing initial check before critical section.
-	if !sc.config.SyncRead {
+	if !f.config.SyncRead {
 		// Checking for valid value in cache store.
-		value, err = sc.upstream.Read(ctx, key)
-		if err == nil {
+		if value, err = f.backend.Read(ctx, key); err == nil {
 			return value, nil
 		}
 	}
 
 	// Locking key for update or finding active lock.
-	sc.lock.Lock()
+	f.lock.Lock()
 	var keyLock chan struct{}
 
 	alreadyLocked := false
 
-	keyLock, alreadyLocked = sc.keyLocks[key]
+	keyLock, alreadyLocked = f.keyLocks[string(key)]
 	if !alreadyLocked {
 		keyLock = make(chan struct{})
-		sc.keyLocks[key] = keyLock
+		f.keyLocks[string(key)] = keyLock
 	}
-	sc.lock.Unlock()
+	f.lock.Unlock()
 
 	// Releasing the lock.
 	defer func() {
 		if !alreadyLocked {
-			sc.lock.Lock()
-			delete(sc.keyLocks, key)
+			f.lock.Lock()
+			delete(f.keyLocks, string(key))
 			close(keyLock)
-			sc.lock.Unlock()
+			f.lock.Unlock()
 		}
 	}()
 
 	// Performing initial check in critical section.
-	if sc.config.SyncRead {
+	if f.config.SyncRead {
 		// Checking for valid value in cache store.
-		value, err = sc.upstream.Read(ctx, key)
-		if err == nil {
+		if value, err = f.backend.Read(ctx, key); err == nil {
 			return value, nil
 		}
 	}
 
-	// If already locked waiting for completion before checking upstream again.
+	// If already locked waiting for completion before checking backend again.
 	if alreadyLocked {
 		// Return immediately if update is in progress and stale value available.
-		if val, freshEnough := sc.freshEnough(err, value); freshEnough {
+		if val, freshEnough := f.freshEnough(err); freshEnough {
 			return val, nil
 		}
 
-		return sc.waitForValue(ctx, key, keyLock)
+		return f.waitForValue(ctx, key, keyLock)
 	}
 
 	// Pushing expired value with short ttl to serve during update.
-	if val, freshEnough := sc.freshEnough(err, value); freshEnough {
-		err = sc.refreshStale(ctx, key, val)
-		if err != nil {
+	if val, freshEnough := f.freshEnough(err); freshEnough {
+		if err = f.refreshStale(ctx, key, val); err != nil {
 			return nil, err
 		}
+
+		value = val
 	}
 
 	// Check if update failed recently.
-	if err := sc.recentlyFailed(ctx, key); err != nil {
+	if err := f.recentlyFailed(ctx, key); err != nil {
 		return nil, err
 	}
 
-	// Detaching context into background if SyncUpdate is disabled and there is a stale value already.
-	ctx, syncUpdate := sc.ctxSync(ctx, err)
+	// Detaching context into background if FailoverConfig.SyncUpdate is disabled and there is a stale value already.
+	ctx, syncUpdate := f.ctxSync(ctx, err)
 
 	// Running cache build synchronously.
 	if syncUpdate {
-		updated, err := sc.doBuild(ctx, key, value, buildFunc)
+		updated, err := f.doBuild(ctx, key, value, buildFunc)
 		// Return stale value if update fails.
 		if err != nil {
-			sc.log.Warn(ctx, "failed to update stale cache value",
-				"error", err,
-				"name", sc.config.Name,
-				"key", key)
+			if f.log != nil {
+				f.log.Warn(ctx, "failed to update stale cache value",
+					"error", err,
+					"name", f.config.Name,
+					"key", key)
+			}
 
 			if value != nil {
 				return value, nil
@@ -237,17 +222,17 @@ func (sc *Failover) Get(ctx context.Context, key string, buildFunc func(ctx cont
 	// Spawning cache update in background.
 	go func() {
 		defer func() {
-			sc.lock.Lock()
-			delete(sc.keyLocks, key)
+			f.lock.Lock()
+			delete(f.keyLocks, string(key))
 			close(keyLock)
-			sc.lock.Unlock()
+			f.lock.Unlock()
 		}()
 
-		_, err := sc.doBuild(ctx, key, value, buildFunc)
-		if err != nil {
-			sc.log.Warn(ctx, "failed to update stale cache value in background",
+		_, err := f.doBuild(ctx, key, value, buildFunc)
+		if err != nil && f.log != nil {
+			f.log.Warn(ctx, "failed to update cache value in background",
 				"error", err,
-				"name", sc.config.Name,
+				"name", f.config.Name,
 				"key", key)
 		}
 	}()
@@ -255,43 +240,40 @@ func (sc *Failover) Get(ctx context.Context, key string, buildFunc func(ctx cont
 	return value, nil
 }
 
-func (sc *Failover) freshEnough(err error, value interface{}) (interface{}, bool) {
-	var errExpired ErrExpired
+func (f *Failover) freshEnough(err error) (interface{}, bool) {
+	var errExpired ErrWithExpiredItem
 
 	if errors.As(err, &errExpired) {
-		if sc.config.MaxExpiration != 0 {
-			if time.Since(errExpired.ExpiredAt()) < sc.config.MaxExpiration {
-				return errExpired.Value(), true
-			}
-		} else {
+		if f.config.MaxStaleness == 0 || time.Since(errExpired.ExpiredAt()) < f.config.MaxStaleness {
 			return errExpired.Value(), true
-		}
-	} else {
-		if sc.config.MaxExpiration == 0 {
-			if errors.Is(err, ErrExpiredCacheItem) && value != nil {
-				return value, true
-			}
 		}
 	}
 
 	return nil, false
 }
 
-func (sc *Failover) waitForValue(ctx context.Context, key string, keyLock chan struct{}) (interface{}, error) {
-	sc.log.Debug(ctx, "waiting for cache value", "name", sc.config.Name, "key", key)
+func (f *Failover) waitForValue(ctx context.Context, key []byte, keyLock chan struct{}) (interface{}, error) {
+	if f.log != nil {
+		f.log.Debug(ctx, "waiting for cache value", "name", f.config.Name, "key", key)
+	}
 
 	// Waiting for value built by keyLock owner.
 	<-keyLock
 
 	// Recurse to check and return the just-updated value.
-	value, err := sc.upstream.Read(ctx, key)
-	if errors.Is(err, ErrExpiredCacheItem) {
-		err = nil
+	value, err := f.backend.Read(ctx, key)
+	if err == nil {
+		return value, nil
 	}
 
-	if errors.Is(err, ErrCacheItemNotFound) {
+	var errExpired ErrWithExpiredItem
+	if errors.As(err, &errExpired) {
+		return errExpired.Value(), nil
+	}
+
+	if errors.Is(err, ErrNotFound) {
 		// Check if update failed recently.
-		if err := sc.recentlyFailed(ctx, key); err != nil {
+		if err := f.recentlyFailed(ctx, key); err != nil {
 			return nil, err
 		}
 	}
@@ -299,14 +281,19 @@ func (sc *Failover) waitForValue(ctx context.Context, key string, keyLock chan s
 	return value, err
 }
 
-func (sc *Failover) refreshStale(ctx context.Context, key string, value interface{}) error {
-	sc.log.Debug(ctx, "refreshing expired value",
-		"name", sc.config.Name,
-		"key", key,
-		"value", value)
-	sc.stat.Add(ctx, MetricRefreshed, 1, "name", sc.config.Name)
+func (f *Failover) refreshStale(ctx context.Context, key []byte, value interface{}) error {
+	if f.log != nil {
+		f.log.Debug(ctx, "refreshing expired value",
+			"name", f.config.Name,
+			"key", key,
+			"value", value)
+	}
 
-	writeErr := sc.upstream.Write(WithTTL(ctx, sc.config.UpdateTTL, false), key, value)
+	if f.stat != nil {
+		f.stat.Add(ctx, MetricRefreshed, 1, "name", f.config.Name)
+	}
+
+	writeErr := f.backend.Write(WithTTL(ctx, f.config.UpdateTTL, false), key, value)
 	if writeErr != nil {
 		return ctxd.WrapError(ctx, writeErr, "failed to refresh expired value")
 	}
@@ -314,49 +301,56 @@ func (sc *Failover) refreshStale(ctx context.Context, key string, value interfac
 	return nil
 }
 
-func (sc *Failover) doBuild(
+func (f *Failover) doBuild(
 	ctx context.Context,
-	key string,
+	key []byte,
 	value interface{},
 	buildFunc func(ctx context.Context) (interface{}, error),
 ) (interface{}, error) {
-	defer func() {
-		sc.stat.Add(ctx, MetricBuild, 1, "name", sc.config.Name)
-	}()
-	sc.log.Debug(ctx, "building cache value", "name", sc.config.Name, "key", key)
+	if f.stat != nil {
+		defer func() {
+			f.stat.Add(ctx, MetricBuild, 1, "name", f.config.Name)
+		}()
+	}
+
+	if f.log != nil {
+		f.log.Debug(ctx, "building cache value", "name", f.config.Name, "key", key)
+	}
 
 	uVal, err := buildFunc(ctx)
 	if err != nil {
-		sc.stat.Add(ctx, MetricFailed, 1, "name", sc.config.Name)
+		if f.stat != nil {
+			f.stat.Add(ctx, MetricFailed, 1, "name", f.config.Name)
+		}
 
-		if sc.config.FailedUpdateTTL > -1 {
-			writeErr := sc.Errors.Write(ctx, key, err)
-			if writeErr != nil {
-				sc.log.Error(ctx, "failed to cache update failure",
+		if f.config.FailedUpdateTTL > -1 {
+			writeErr := f.Errors.Write(ctx, key, err)
+			if writeErr != nil && f.log != nil {
+				f.log.Error(ctx, "failed to cache update failure",
 					"error", writeErr,
 					"updateErr", err,
 					"key", key,
-					"name", sc.config.Name)
+					"name", f.config.Name)
 			}
 		}
 
 		return nil, err
 	}
 
-	writeErr := sc.upstream.Write(ctx, key, uVal)
+	writeErr := f.backend.Write(ctx, key, uVal)
 	if writeErr != nil {
 		return nil, writeErr
 	}
 
-	if sc.config.ObserveMutability && value != nil {
-		sc.observeMutability(ctx, uVal, value)
+	if f.config.ObserveMutability && value != nil {
+		f.observeMutability(ctx, uVal, value)
 	}
 
 	return uVal, err
 }
 
-func (sc *Failover) ctxSync(ctx context.Context, err error) (context.Context, bool) {
-	syncUpdate := !sc.config.BackgroundUpdate || err != nil
+func (f *Failover) ctxSync(ctx context.Context, err error) (context.Context, bool) {
+	syncUpdate := f.config.SyncUpdate || err != nil
 	if syncUpdate {
 		return ctx, true
 	}
@@ -365,9 +359,9 @@ func (sc *Failover) ctxSync(ctx context.Context, err error) (context.Context, bo
 	return detachedContext{ctx}, false
 }
 
-func (sc *Failover) recentlyFailed(ctx context.Context, key string) error {
-	if sc.config.FailedUpdateTTL > -1 {
-		errVal, err := sc.Errors.Read(ctx, key)
+func (f *Failover) recentlyFailed(ctx context.Context, key []byte) error {
+	if f.config.FailedUpdateTTL > -1 {
+		errVal, err := f.Errors.Read(ctx, key)
 		if err == nil {
 			return errVal.(error)
 		}
@@ -376,9 +370,9 @@ func (sc *Failover) recentlyFailed(ctx context.Context, key string) error {
 	return nil
 }
 
-func (sc *Failover) observeMutability(ctx context.Context, uVal, value interface{}) {
+func (f *Failover) observeMutability(ctx context.Context, uVal, value interface{}) {
 	equal := reflect.DeepEqual(value, uVal)
 	if !equal {
-		sc.stat.Add(ctx, MetricChanged, 1, "name", sc.config.Name)
+		f.stat.Add(ctx, MetricChanged, 1, "name", f.config.Name)
 	}
 }

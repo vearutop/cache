@@ -2,58 +2,16 @@ package cache
 
 import (
 	"encoding/gob"
+	"hash"
 	"hash/fnv"
-	"io"
 	"reflect"
 	"strings"
 )
 
-// Dump saves cached entries and returns a number of processed entries.
-func (c *Memory) Dump(w io.Writer) (int, error) {
-	encoder := gob.NewEncoder(w)
-
-	// TODO check if Entry escapes and if value semantics helps.
-	return c.Walk(func(key string, value Entry) error {
-		return encoder.Encode(struct {
-			Key   string
-			Entry entry
-		}{
-			Key:   key,
-			Entry: value.(entry),
-		})
-	})
-}
-
-// Restore loads cached entries and returns number of processed entries.
-func (c *Memory) Restore(r io.Reader) (int, error) {
-	decoder := gob.NewDecoder(r)
-	e := struct {
-		Key   string
-		Entry entry
-	}{}
-	n := 0
-
-	for {
-		err := decoder.Decode(&e)
-		if err == io.EOF {
-			break
-		}
-
-		if err != nil {
-			return n, err
-		}
-
-		c.Lock()
-		c.data[e.Key] = e.Entry
-		c.Unlock()
-
-		n++
-	}
-
-	return n, nil
-}
-
-var gobTypesHash uint64
+var (
+	gobTypesHash uint64
+	gobTypes     map[reflect.Type]bool
+)
 
 // GobTypesHashReset resets types hash to zero value.
 func GobTypesHashReset() {
@@ -68,19 +26,28 @@ func GobTypesHash() uint64 {
 // GobRegister enables cached type transferring.
 func GobRegister(values ...interface{}) {
 	for _, value := range values {
-		h := fnv.New64()
 		t := reflect.TypeOf(value)
-		// nolint:errcheck // fnv.Write never returns an error.
+		if gobTypes[t] {
+			continue
+		}
+
+		h := fnv.New64()
 		_, _ = h.Write([]byte(t.PkgPath() + t.String()))
 		recursiveTypeHash(t, h, map[reflect.Type]bool{})
 		gobTypesHash ^= h.Sum64()
+
+		if gobTypes == nil {
+			gobTypes = make(map[reflect.Type]bool)
+		}
+
+		gobTypes[t] = true
 
 		gob.Register(value)
 	}
 }
 
 // RecursiveTypeHash hashes type of value recursively to ensure structural match.
-func recursiveTypeHash(t reflect.Type, h io.Writer, met map[reflect.Type]bool) {
+func recursiveTypeHash(t reflect.Type, h hash.Hash64, met map[reflect.Type]bool) {
 	for {
 		if t.Kind() != reflect.Ptr {
 			break
@@ -106,7 +73,6 @@ func recursiveTypeHash(t reflect.Type, h io.Writer, met map[reflect.Type]bool) {
 			}
 
 			if !f.Anonymous {
-				// nolint:errcheck // fnv.Write never returns an error.
 				_, _ = h.Write([]byte(f.Name))
 			}
 
@@ -119,7 +85,6 @@ func recursiveTypeHash(t reflect.Type, h io.Writer, met map[reflect.Type]bool) {
 		recursiveTypeHash(t.Key(), h, met)
 		recursiveTypeHash(t.Elem(), h, met)
 	default:
-		// nolint:errcheck // fnv.Write never returns an error.
 		_, _ = h.Write([]byte(t.String()))
 	}
 }

@@ -1,7 +1,7 @@
 package cache
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -15,15 +15,15 @@ type Invalidator struct {
 	SkipInterval time.Duration
 
 	// Callbacks contains a list of functions to call on invalidate.
-	Callbacks []func()
+	Callbacks []func(ctx context.Context)
 
 	lastRun time.Time
 }
 
 // Invalidate triggers cache expiration.
-func (i *Invalidator) Invalidate() error {
+func (i *Invalidator) Invalidate(ctx context.Context) error {
 	if i.Callbacks == nil {
-		return errors.New("nothing to invalidate")
+		return ErrNothingToInvalidate
 	}
 
 	i.Lock()
@@ -34,13 +34,13 @@ func (i *Invalidator) Invalidate() error {
 	}
 
 	if time.Since(i.lastRun) < i.SkipInterval {
-		return fmt.Errorf("already invalidated at %s, %s did not pass",
-			i.lastRun.String(), i.SkipInterval.String())
+		return fmt.Errorf("%w at %s, %s did not pass",
+			ErrAlreadyInvalidated, i.lastRun.String(), i.SkipInterval.String())
 	}
 
 	i.lastRun = time.Now()
 	for _, cb := range i.Callbacks {
-		cb()
+		cb(ctx)
 	}
 
 	return nil
