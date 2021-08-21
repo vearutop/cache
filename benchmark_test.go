@@ -21,7 +21,7 @@ func Benchmark_concurrent(b *testing.B) {
 
 		for _, numRoutines := range []int{ /*1, */ runtime.GOMAXPROCS(0)} {
 			numRoutines := numRoutines
-			for _, writePercent := range []float64{10} {
+			for _, writePercent := range []float64{0, 0.1, 10} {
 				writeEvery := int(100.0 / writePercent)
 
 				for _, loader := range []cacheLoader{
@@ -279,6 +279,7 @@ func (sbm syncMap) make(b *testing.B, cardinality int) cacheLoader {
 	return syncMap{
 		c:           &c,
 		cardinality: cardinality,
+		writeEvery:  sbm.writeEvery,
 	}
 }
 
@@ -318,7 +319,7 @@ type xSyncMap struct {
 func (sbm xSyncMap) make(b *testing.B, cardinality int) cacheLoader {
 	b.Helper()
 
-	c := xsync.Map{}
+	c := xsync.NewMap()
 	buf := make([]byte, 0)
 
 	for i := 0; i < cardinality; i++ {
@@ -331,8 +332,9 @@ func (sbm xSyncMap) make(b *testing.B, cardinality int) cacheLoader {
 	}
 
 	return xSyncMap{
-		c:           &c,
+		c:           c,
 		cardinality: cardinality,
+		writeEvery:  sbm.writeEvery,
 	}
 }
 
