@@ -28,7 +28,7 @@ func Benchmark_concurrent(b *testing.B) {
 					//failoverShardedMap{writeEvery: writeEvery},
 					//shardedMap{writeEvery: writeEvery},
 					syncMap{writeEvery: writeEvery},
-					//xSyncMap{writeEvery: writeEvery},
+					xSyncMap{writeEvery: writeEvery},
 				} {
 					loader := loader
 
