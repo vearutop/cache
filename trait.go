@@ -1,32 +1,28 @@
-package cache
+package cachex
 
 import (
 	"context"
+	"github.com/bool64/cache"
+	"time"
+
 	"github.com/bool64/ctxd"
 	"github.com/bool64/stats"
-	"time"
 )
 
 type trait struct {
 	closed chan struct{}
 
-	config MemoryConfig
+	config Config
 	log    ctxd.Logger
 	stat   stats.Tracker
 }
 
 type backend interface {
 	Len() int
-	clearExpiredBefore(t time.Time)
+	deleteExpiredBefore(t time.Time)
 }
 
-func newTrait(b backend, cfg ...MemoryConfig) *trait {
-	config := MemoryConfig{}
-
-	if len(cfg) >= 1 {
-		config = cfg[0]
-	}
-
+func newTrait(b backend, config Config) *trait {
 	if config.DeleteExpiredAfter == 0 {
 		config.DeleteExpiredAfter = 24 * time.Hour
 	}
@@ -58,38 +54,40 @@ func newTrait(b backend, cfg ...MemoryConfig) *trait {
 		go t.reportItemsCount(b)
 	}
 
-	go t.cleaner(b)
+	go t.janitor(b)
 
 	return t
 }
 
-func (c *trait) prepareRead(ctx context.Context, cacheEntry entry, found bool) (interface{}, error) {
+func (c *trait) prepareRead(ctx context.Context, e interface{}, found bool) (interface{}, error) {
 	if !found {
 		if c.log != nil {
 			c.log.Debug(ctx, "cache miss", "name", c.config.Name)
 		}
 
 		if c.stat != nil {
-			c.stat.Add(ctx, MetricMiss, 1, "name", c.config.Name)
+			c.stat.Add(ctx, cache.MetricMiss, 1, "name", c.config.Name)
 		}
 
-		return nil, ErrCacheItemNotFound
+		return nil, cache.ErrNotFound
 	}
 
-	if cacheEntry.Exp.Before(time.Now()) {
+	cacheEntry := e.(*entry)
+
+	if cacheEntry.E.Before(time.Now()) {
 		if c.log != nil {
 			c.config.Logger.Debug(ctx, "cache key expired", "name", c.config.Name)
 		}
 
 		if c.stat != nil {
-			c.stat.Add(ctx, MetricExpired, 1, "name", c.config.Name)
+			c.stat.Add(ctx, cache.MetricExpired, 1, "name", c.config.Name)
 		}
 
-		return cacheEntry.Val, errExpired{entry: cacheEntry}
+		return nil, errExpired{entry: cacheEntry}
 	}
 
 	if c.stat != nil {
-		c.stat.Add(ctx, MetricHit, 1, "name", c.config.Name)
+		c.stat.Add(ctx, cache.MetricHit, 1, "name", c.config.Name)
 	}
 
 	if c.log != nil {
@@ -99,7 +97,7 @@ func (c *trait) prepareRead(ctx context.Context, cacheEntry entry, found bool) (
 		)
 	}
 
-	return cacheEntry.Val, nil
+	return cacheEntry.V, nil
 }
 
 func (c *trait) reportItemsCount(b backend) {
@@ -118,41 +116,44 @@ func (c *trait) reportItemsCount(b backend) {
 			}
 
 			if c.stat != nil {
-				c.stat.Set(context.Background(), MetricItems, float64(count), "name", c.config.Name)
+				c.stat.Set(context.Background(), cache.MetricItems, float64(count), "name", c.config.Name)
 			}
 		case <-c.closed:
 			if c.log != nil {
-				c.log.Debug(context.Background(), "exiting cache items counter goroutine",
+				c.log.Debug(context.Background(), "closing cache items counter goroutine",
 					"name", c.config.Name)
 			}
+
 			if c.stat != nil {
-				c.stat.Set(context.Background(), MetricItems, float64(b.Len()), "name", c.config.Name)
+				c.stat.Set(context.Background(), cache.MetricItems, float64(b.Len()), "name", c.config.Name)
 			}
+
 			return
 		}
 	}
 }
 
-func (c *trait) cleaner(b backend) {
+func (c *trait) janitor(b backend) {
 	for {
 		interval := c.config.DeleteExpiredJobInterval
 
 		select {
 		case <-time.After(interval):
 			expirationBoundary := time.Now().Add(-c.config.DeleteExpiredAfter)
-			b.clearExpiredBefore(expirationBoundary)
+			b.deleteExpiredBefore(expirationBoundary)
 		case <-c.closed:
 			if c.log != nil {
-				c.log.Debug(context.Background(), "exiting expired cache cleaner",
+				c.log.Debug(context.Background(), "closing cache janitor",
 					"name", c.config.Name)
 			}
+
 			return
 		}
 	}
 }
 
-// MemoryConfig controls in-Memory cache instance.
-type MemoryConfig struct {
+// Config controls cache instance.
+type Config struct {
 	// Logger is an instance of contextualized logger, can be nil.
 	Logger ctxd.Logger
 
@@ -179,46 +180,69 @@ type MemoryConfig struct {
 	// If enabled, entry TTL will be randomly altered in bounds of ±(ExpirationJitter * TTL / 2).
 	ExpirationJitter float64
 
-	// HeapInUseSoftLimit sets heap in use threshold when eviction of most expired items will be performed.
+	// HeapInUseSoftLimit sets heap in use threshold when eviction of most expired items will be triggered.
 	//
 	// Eviction is a part of delete expired job, eviction runs at most once per delete expired job and
-	// removes most expired entries up to HeapInUseEvictFraction.
+	// removes most expired entries up to EvictFraction.
 	HeapInUseSoftLimit uint64
 
-	// HeapInUseEvictFraction is a fraction of total count of items to be evicted (0, 1], default 0.1 (10% of items).
-	HeapInUseEvictFraction float64
+	// CountSoftLimit sets count threshold when eviction of most expired items will be triggered.
+	//
+	// Eviction is a part of delete expired job, eviction runs at most once per delete expired job and
+	// removes most expired entries up to EvictFraction.
+	CountSoftLimit uint64
+
+	// EvictFraction is a fraction (0, 1] of total count of items to be evicted when resource is overused,
+	// default 0.1 (10% of items).
+	EvictFraction float64
+}
+
+// Use is a functional option to apply configuration.
+func (c Config) Use(cfg *Config) {
+	*cfg = c
+}
+
+type keyString []byte
+
+func (ks keyString) MarshalText() ([]byte, error) {
+	return ks, nil
 }
 
 // entry is a cache entry.
 type entry struct {
-	Val interface{}
-	Exp time.Time
+	K keyString   `json:"key"`
+	V interface{} `json:"val"`
+	E time.Time   `json:"exp"`
+}
+
+func (e entry) Key() []byte {
+	return e.K
 }
 
 func (e entry) Value() interface{} {
-	return e.Val
+	return e.V
 }
 
 func (e entry) ExpireAt() time.Time {
-	return e.Exp
+	return e.E
 }
 
 type errExpired struct {
-	entry entry
+	entry *entry
 }
 
 func (e errExpired) Error() string {
-	return ErrExpiredCacheItem.Error()
+	return cache.ErrExpired.Error()
 }
 
 func (e errExpired) Value() interface{} {
-	return e.entry.Val
+	return e.entry.V
 }
 
 func (e errExpired) ExpiredAt() time.Time {
-	return e.entry.Exp
+	return e.entry.E
 }
 
 func (e errExpired) Is(err error) bool {
-	return err == ErrExpiredCacheItem
+	return err == cache.ErrExpired // nolint:errorlint,goerr113  // Target sentinel error is not wrapped.
 }

@@ -15,4 +15,4 @@
 //  - Allows mass expiration and removal (drop cache).
 //  - Expiration jitter to avoid massive synchronized expiration.
 //  - Warm cache with background value watcher.
-package cache
+package cachex
